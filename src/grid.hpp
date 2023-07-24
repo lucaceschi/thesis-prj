@@ -7,7 +7,12 @@
 class Grid
 {
 public:
-    Grid(Eigen::Vector3d xTangVec, Eigen::Vector3d yTangVec, int width, int height, float edgeLength);
+    Grid(Eigen::Vector3d center,
+         Eigen::Vector3d xTangVec, Eigen::Vector3d yTangVec,
+         int nRows, int nCols,
+         double edgeLength);
+
+    Grid(Eigen::Matrix3Xd nodePos, Eigen::Array2Xi edges, Eigen::ArrayXd edgeLengths);
 
     int getNNodes() const;
     Eigen::Vector3d getNodePos(int i) const;
@@ -15,6 +20,7 @@ public:
 
     int getNEdges() const;
     Eigen::Array2i getEdge(int e) const;
+    double getEdgeLen(int e) const;
 
     void setNodePos(int i, Eigen::Vector3d pos);
 
@@ -23,9 +29,9 @@ private:
     Eigen::Vector3d yTangVec_;
     int nRows_;
     int nCols_;
-    float edgeLength_;
     Eigen::Matrix3Xd nodePos_;
     Eigen::Array2Xi edges_;
+    Eigen::ArrayXd edgeLengths_;
 
 };
 

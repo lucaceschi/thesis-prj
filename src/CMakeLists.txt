@@ -1,5 +1,5 @@
 set(SOURCES
-    picking_color.cpp
+    bound_actuation.cpp
     grid.cpp
     framework/app.cpp
     framework/debug.cpp
