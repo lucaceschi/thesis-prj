@@ -1,3 +1,5 @@
+#include "grid.hpp"
+
 #include <Eigen/Dense>
 
 
@@ -12,64 +14,62 @@ public:
 class EdgeLenConstr : public HardConstraint
 {
 public:
-    EdgeLenConstr(Eigen::Matrix3Xd& pos, int nodeAIdx, int nodeBIdx, double length, int& pickedNode)
-        : pos_(pos),
+    EdgeLenConstr(Grid& grid, int nodeAIdx, int nodeBIdx, double length)
+        : grid_(grid),
           nodeIdxs_(nodeAIdx, nodeBIdx),
-          len_(length),
-          pickedNode_(pickedNode)
+          len_(length)
     {}
 
     virtual double value() const
     {
-        return (pos_.col(nodeIdxs_.first) - pos_.col(nodeIdxs_.second)).norm();
+        return (grid_.getNodePos(nodeIdxs_.first) - grid_.getNodePos(nodeIdxs_.second)).norm();
     }
 
     virtual double resolve() const
     {
-        Eigen::Vector3d v = pos_.col(nodeIdxs_.first) - pos_.col(nodeIdxs_.second);
+        Eigen::Vector3d v = grid_.getNodePos(nodeIdxs_.first) - grid_.getNodePos(nodeIdxs_.second);
         double dist = v.norm();
         v.normalize();
         double delta = (len_ - dist);
 
-        if(nodeIdxs_.first == pickedNode_)
-            pos_.col(nodeIdxs_.second) -= delta * v;
-        else if(nodeIdxs_.second == pickedNode_)
-            pos_.col(nodeIdxs_.first) += delta * v;
+        if(grid_.isNodeFixed(nodeIdxs_.first))
+            grid_.getNodePos(nodeIdxs_.second) -= delta * v;
+        else if(grid_.isNodeFixed(nodeIdxs_.second))
+            grid_.getNodePos(nodeIdxs_.first) += delta * v;
         else
         {
-            pos_.col(nodeIdxs_.first) += delta/2.0 * v;
-            pos_.col(nodeIdxs_.second) -= delta/2.0 * v;
+            grid_.getNodePos(nodeIdxs_.first) += delta/2.0 * v;
+            grid_.getNodePos(nodeIdxs_.second) -= delta/2.0 * v;
         }
 
         return std::abs(delta);
     }
 
-    std::pair<int, int> getNodeIdxs() { return nodeIdxs_; }
+    std::pair<int, int> getNodeIdxs() const { return nodeIdxs_; }
+    double getLength() const { return len_; }
 
 private:
-    Eigen::Matrix3Xd& pos_;
+    Grid& grid_;
     std::pair<int, int> nodeIdxs_;
     double len_;
-    int& pickedNode_;
 };
 
 
 class SphereCollConstr : public HardConstraint
 {
 public:
-    SphereCollConstr(Eigen::Matrix3Xd& pos, double radius, int& pickedNode)
-        : pos_(pos),
-          radius_(radius),
-          pickedNode_(pickedNode)
+    SphereCollConstr(Grid& grid, double radius)
+        : grid_(grid),
+          radius_(radius)
     {}
 
     virtual double value() const
     {
         double currDelta, totValue = 0;
         
-        for(int n = 0; n < pos_.cols(); n++)
+        for(int n = 0; n < grid_.getNNodes(); n++)
         {
-            currDelta = radius_ - pos_.col(n).squaredNorm(); 
+            currDelta = radius_ - grid_.getNodePos(n).squaredNorm(); 
             if(currDelta > 0)
                 totValue += currDelta;
         }
@@ -81,21 +81,21 @@ public:
     {
         double currDist, currDelta, totValue = 0;
         
-        for(int n = 0; n < pos_.cols(); n++)
+        for(int n = 0; n < grid_.getNNodes(); n++)
         {
-            if(n == pickedNode_)
+            if(grid_.isNodeFixed(n))
                 continue;
             
-            currDist = pos_.col(n).squaredNorm();
+            currDist = grid_.getNodePos(n).squaredNorm();
             currDelta = radius_ - currDist; 
             if(currDelta > 0)
             {
                 totValue += currDelta;
                 
-                if(pos_.col(n).isZero())
-                    pos_.col(n) = Eigen::Vector3d{0, radius_, 0};
+                if(grid_.getNodePos(n).isZero())
+                    grid_.getNodePos(n) = Eigen::Vector3d{0, radius_, 0};
                 else
-                    pos_.col(n) *= (radius_ / currDist);
+                    grid_.getNodePos(n) *= (radius_ / currDist);
             }
         }
 
@@ -104,7 +104,6 @@ public:
           
 
 private:
-    Eigen::Matrix3Xd& pos_;
+    Grid& grid_;
     double radius_;
-    int& pickedNode_;
 };

@@ -1,6 +1,5 @@
 set(SOURCES
     bound_actuation.cpp
-    grid.cpp
     framework/app.cpp
     framework/debug.cpp
     framework/input.cpp

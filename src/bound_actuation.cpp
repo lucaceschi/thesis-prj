@@ -13,8 +13,14 @@
 #define GRID_COLS  10
 #define GRID_ROWS 10
 #define GRID_EDGE_LEN 0.2
+#define GRID_CENTER Eigen::Vector3d{0, 0.5, 0}
+#define GRID_X_TANG_VEC Eigen::Vector3d{1, 0, 0}
+#define GRID_Y_TANG_VEC Eigen::Vector3d{0, 0, 1}
 
-#define SIM_TOL 1e-4
+#define SIM_GRAV_SHIFT 1e-2
+#define SIM_SPHERE_RADIUS 0.5
+#define SIM_TOL 1e-2
+#define SIM_MAX_ITERS 1000
 
 
 class MainApp : public frmwrk::App
@@ -25,22 +31,21 @@ public:
     {}
 
 private:
-    Grid grid_ = Grid({0, 0.5, 0}, {1, 0, 0}, {0, 0, 1}, GRID_ROWS, GRID_COLS, GRID_EDGE_LEN);
-
+    Grid grid_ = Grid(GRID_CENTER, GRID_ROWS, GRID_COLS, GRID_X_TANG_VEC, GRID_Y_TANG_VEC, GRID_EDGE_LEN);
+    
     const GLubyte bgColorRender_[3] = {0xff, 0xff, 0xff};
     const GLubyte bgColorPicking_[3] = {0x00, 0x00, 0xff};
     GLubyte pickedColor_[3];
-    bool picking_ = false;
     int pickedNode_ = -1;
     GLfloat pickedDepth_;
 
     vcg::Trackball trackball_;
 
-    bool shapeConstraint_ = true;
-    bool fixedGridNodes_[GRID_ROWS * GRID_COLS] = {false};
-    int simSteps_ = 10;
+    SphereCollConstr sphereC_ = SphereCollConstr(grid_, SIM_SPHERE_RADIUS);
+    bool playSim_ = false;
+    bool simCollision_ = false;
     int simIters_ = 0;
-    std::vector<float> pbdDeltas_;
+    std::vector<float> simDeltas_;
 
 
     virtual bool initApp()
@@ -76,15 +81,15 @@ private:
                 glReadPixels(curPos(0), curPos(1), 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT, &pickedDepth_);
                 pickedNode_ = color2node(pickedColor_[0], pickedColor_[1], pickedColor_[2]);
                 
-                if(pickedNode_ != -1)
-                    picking_ = true;
-                else
+                if(pickedNode_ == -1)
                     trackball_.MouseDown((int)curPos(0), (int)curPos(1), vcg::Trackball::BUTTON_LEFT);
+                else
+                    grid_.fixedNodes.insert(pickedNode_);
             }
 
             if(input_.isMouseButtonHeld(GLFW_MOUSE_BUTTON_LEFT))
             {
-                if(picking_)
+                if(pickedNode_ != -1)
                 {
                     GLdouble modelview[16];
                     GLdouble projection[16];
@@ -103,11 +108,11 @@ private:
 
                     Eigen::Vector4d worldPos = (projectionMat * modelviewMat).inverse() * curPosHom;
 
-                    grid_.setNodePos(pickedNode_, {
+                    grid_.getNodePos(pickedNode_) = Eigen::Vector3d{
                         worldPos(0) / worldPos(3),
                         worldPos(1) / worldPos(3),
                         worldPos(2) / worldPos(3)
-                    });
+                    };
                 }
                 else
                     trackball_.MouseMove((int)curPos(0), (int)curPos(1));
@@ -115,20 +120,24 @@ private:
 
             if(input_.isMouseButtonReleased(GLFW_MOUSE_BUTTON_LEFT))
             {
-                picking_ = false;
+                grid_.fixedNodes.erase(pickedNode_);
+                pickedNode_ = -1;
                 trackball_.MouseUp((int)curPos(0), (int)curPos(1), vcg::Trackball::BUTTON_LEFT);
             }
         }
 
         draw();
 
+        if(playSim_)
+            simIters_ = simGrid(deltaTime);
+
         ImGui::Begin("Sim");
         ImGui::Text("N iters: %i", simIters_);
-        ImGui::PlotLines("Deltas", pbdDeltas_.data(), pbdDeltas_.size());
-        ImGui::InputInt("Steps", &simSteps_);
-        if(ImGui::Button("Go!"))
-            for(int i = 0; i < simSteps_; i++)
-                simIters_ = simGrid(deltaTime);
+        ImGui::PlotLines("Deltas", simDeltas_.data(), simDeltas_.size());
+        if(ImGui::Button("Play / Pause"))
+            playSim_ = !playSim_;
+        if(ImGui::Button("Enable / Disable collision"))
+            simCollision_ = !simCollision_;
         if(ImGui::Button("Cut"))
             cut();
         ImGui::End();
@@ -145,7 +154,7 @@ private:
             glClearColor(bgColorPicking_[0]/255.0, bgColorPicking_[1]/255.0, bgColorPicking_[2]/255.0, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // Draw grid edges
+        // Draw edge len constraints
 
         if(!pickingMode)
         {           
@@ -153,11 +162,10 @@ private:
             glLineWidth(3.0f);
 
             glBegin(GL_LINES);
-            for(int e = 0; e < grid_.getNEdges(); e++)
+            for(const EdgeLenConstr& e : grid_.edgeLenC)
             {
-                const Eigen::Array2i edgeNodes = grid_.getEdge(e);
-                const Eigen::Vector3d nodePosA = grid_.getNodePos(edgeNodes(0));
-                const Eigen::Vector3d nodePosB = grid_.getNodePos(edgeNodes(1));
+                const Eigen::Vector3d nodePosA = grid_.getNodePos(e.getNodeIdxs().first);
+                const Eigen::Vector3d nodePosB = grid_.getNodePos(e.getNodeIdxs().second);
                 glVertex3d(nodePosA(0), nodePosA(1), nodePosA(2));
                 glVertex3d(nodePosB(0), nodePosB(1), nodePosB(2));
             }
@@ -180,7 +188,7 @@ private:
                 std::tie(r, g, b) = node2color(n);
                 glColor3ub(r, g, b);
             }
-            else if(picking_ && pickedNode_ == n)
+            else if(pickedNode_ == n || grid_.isNodeFixed(n))
                 glColor3ub(0xff, 0x00, 0x00);
             else
                 glColor3ub(0x0e, 0x0e, 0x0e);
@@ -217,201 +225,71 @@ private:
     {
         for(int n = 0; n < grid_.getNNodes(); n++)
         {
-            if(fixedGridNodes_[n])
+            if(grid_.isNodeFixed(n))
                 continue;
-            
-            Eigen::Vector3d pos = grid_.getNodePos(n);
-            grid_.setNodePos(n, pos - Eigen::Vector3d{0, SIM_TOL, 0});
+
+            grid_.getNodePos(n) -= Eigen::Vector3d{0, SIM_GRAV_SHIFT, 0};
         }
         
-        int nIters = 0;
         bool stop = false;
-        Eigen::Array2i currEdge;
-        Eigen::Vector3d p1, p2, v;
-        double edgeLen, dist, delta, totDeltas;
+        int nIters = 0;
+        double totDelta;
 
-        pbdDeltas_.clear();
-
+        simDeltas_.clear();
         while(!stop)
         {
-            nIters++;
             stop = true;
-            totDeltas = 0;
+            totDelta = 0;
+            
+            for(const EdgeLenConstr& e : grid_.edgeLenC)
+                totDelta += e.resolve();
 
-            for(int e = 0; e < grid_.getNEdges(); e++)
+            if(simCollision_)
+                totDelta += sphereC_.resolve();
+
+            simDeltas_.push_back(totDelta);
+
+            if(totDelta > SIM_TOL)
+                stop = false;
+
+            if(nIters > SIM_MAX_ITERS)
             {
-                currEdge = grid_.getEdge(e);
-                edgeLen = grid_.getEdgeLen(e);
-                p1 = grid_.getNodePos(currEdge[0]);
-                p2 = grid_.getNodePos(currEdge[1]);
-
-                v = p1 - p2;
-                dist = v.norm();
-                v.normalize();
-
-                if(abs(edgeLen - dist) > SIM_TOL)
-                    stop = false;
-
-                delta = (edgeLen - dist);
-                totDeltas += abs(delta);
-
-                if(fixedGridNodes_[currEdge[0]] || (picking_ && currEdge[0] == pickedNode_))
-                    p2 = p2 - delta * v;
-                else if(fixedGridNodes_[currEdge[1]] || (picking_ && currEdge[1] == pickedNode_))
-                    p1 = p1 + delta * v;
-                else
-                {
-                    p1 = p1 + delta/2.0 * v;
-                    p2 = p2 - delta/2.0 * v;
-                }
-
-                if(shapeConstraint_)
-                {
-                    if(p1.squaredNorm() < 0.2)
-                    {
-                        stop = false;
-                        while(p1.squaredNorm() < 0.2)
-                            p1 += (p1 * SIM_TOL);
-                    }
-
-                    if(p2.squaredNorm() < 0.2)
-                    {
-                        stop = false;
-                        while(p2.squaredNorm() < 0.2)
-                            p2 += (p2 * SIM_TOL);
-                    }
-                }
-
-                grid_.setNodePos(currEdge[0], p1);
-                grid_.setNodePos(currEdge[1], p2);
+                frmwrk::Debug::logWarning("Sim iters exceeded, stopping");
+                stop = true;
+                playSim_ = false;
             }
 
-            pbdDeltas_.push_back((float)totDeltas);
+            nIters++;
         }
 
         return nIters;
     }
 
-    /*int simGrid(double deltaTime)
-    {
-        for(int n = 0; n < grid_.getNNodes(); n++)
-        {
-            if(fixedGridNodes_[n])
-                continue;
-
-            grid_.setNodePos(n, grid_.getNodePos(n) - Eigen::Vector3d{0, SIM_TOL, 0});
-        }
-        
-        int nIters = 0;
-        bool stop = false;
-        Eigen::Array2i currEdge;
-        Eigen::Vector3d p1, p2, v;
-        double edgeLen, dist, delta, totDeltas;
-        std::vector<Eigen::Vector3d> newPositions[grid_.getNNodes()];
-
-        while(!stop)
-        {
-            nIters++;
-            stop = true;
-            totDeltas = 0;
-
-            for(int e = 0; e < grid_.getNEdges(); e++)
-            {                
-                currEdge = grid_.getEdge(e);
-                edgeLen = grid_.getEdgeLen(e);
-                p1 = grid_.getNodePos(currEdge[0]);
-                p2 = grid_.getNodePos(currEdge[1]);
-
-                v = p1 - p2;
-                dist = v.norm();
-                v.normalize();
-
-                if(abs(edgeLen - dist) > SIM_TOL)
-                    stop = false;
-                
-                delta = (edgeLen - dist);
-                totDeltas += abs(delta);
-
-                if(fixedGridNodes_[currEdge[0]] || (picking_ && currEdge[0] == pickedNode_))
-                    newPositions[currEdge[1]].push_back(p2 - delta * v);
-                else if(fixedGridNodes_[currEdge[1]] || (picking_ && currEdge[1] == pickedNode_))
-                    newPositions[currEdge[0]].push_back(p1 + delta * v);
-                else
-                {
-                    newPositions[currEdge[0]].push_back(p1 + delta/2.0 * v);
-                    newPositions[currEdge[1]].push_back(p2 - delta/2.0 * v);
-                }
-            }
-
-            for(int n = 0; n < grid_.getNNodes(); n++)
-            {
-                if(!newPositions[n].empty())
-                {
-                    v = {0, 0, 0};
-                    for(const Eigen::Vector3d &p : newPositions[n])
-                        v += p;
-                    v /= newPositions[n].size();
-                    grid_.setNodePos(n, v);
-                }
-                newPositions[n].clear();
-            }
-
-            if(shapeConstraint_)
-                for(int e = 0; e < grid_.getNEdges(); e++)
-                {
-                    currEdge = grid_.getEdge(e);
-                    p1 = grid_.getNodePos(currEdge[0]);
-                    p2 = grid_.getNodePos(currEdge[1]);
-
-                    if(p1.squaredNorm() < 0.2)
-                    {
-                        stop = false;
-                        while(p1.squaredNorm() < 0.2)
-                            p1 += (p1 * SIM_TOL);
-                    }
-                    grid_.setNodePos(currEdge[0], p1);
-
-                    if(p2.squaredNorm() < 0.2)
-                    {
-                        stop = false;
-                        while(p2.squaredNorm() < 0.2)
-                            p2 += (p2 * SIM_TOL);
-                    }
-                    grid_.setNodePos(currEdge[1], p2);
-                }
-        }
-
-        pbdDeltas_.clear();       
-
-        return nIters;
-    }*/
-
     void cut()
     {
         const Eigen::Vector3d cutPlaneNormal = {0, 1, 0};
         
-        std::vector<Eigen::Vector3d> nodes;
+        std::vector<Eigen::Vector3d> newNodes;
         std::unordered_map<int, int> nodeIndexMap;
-        std::vector<std::pair<int, int>> edges;
-        std::vector<double> edgeLengths;
+        std::vector<EdgeLenConstr> newEdgeLenC;
+        std::unordered_set<int> newFixedNodes;
 
         for(int n = 0; n < grid_.getNNodes(); n++)
         {
-            Eigen::Vector3d p = grid_.getNodePos(n);
+            const Eigen::Vector3d p = grid_.getNodePos(n);
 
             // only preserve nodes above the cutting plane
             if(p(1) < 0)
                 continue;
 
-            nodes.push_back(p);
-            nodeIndexMap[n] = nodes.size() - 1;
+            newNodes.push_back(p);
+            nodeIndexMap[n] = newNodes.size() - 1;
         }
         
-        for(int e = 0; e < grid_.getNEdges(); e++)
+        for(const EdgeLenConstr& e : grid_.edgeLenC)
         {
-            Eigen::Array2i edge = grid_.getEdge(e);
-            auto p1IndexPair = nodeIndexMap.find(edge[0]);
-            auto p2IndexPair = nodeIndexMap.find(edge[1]);
+            auto p1IndexPair = nodeIndexMap.find(e.getNodeIdxs().first);
+            auto p2IndexPair = nodeIndexMap.find(e.getNodeIdxs().second);
 
             // scrap edges below the cutting plane
             if(p1IndexPair == nodeIndexMap.end() && p2IndexPair == nodeIndexMap.end())
@@ -425,55 +303,45 @@ private:
                 // edge is above the cutting plane, preserve it
                 p1Index = p1IndexPair->second;
                 p2Index = p2IndexPair->second;
-                edgeLength = grid_.getEdgeLen(e);
+                edgeLength = e.getLength();
             }
             else
             {
                 // edge crosses the cutting plane: retrieve the node below the cutting plane
                 // and move it to the closest intersection between the edge and the plane
 
-                Eigen::Vector3d edgeVec = (grid_.getNodePos(edge[0]) - grid_.getNodePos(edge[1])).normalized();
+                Eigen::Vector3d edgeVec = (grid_.getNodePos(e.getNodeIdxs().first) - grid_.getNodePos(e.getNodeIdxs().second)).normalized();
                 Eigen::Vector3d newNode;
 
                 if(p1IndexPair == nodeIndexMap.end())
                 {
-                    newNode = grid_.getNodePos(edge[0]);
-                    p1Index = nodes.size();
+                    newNode = grid_.getNodePos(e.getNodeIdxs().first);
+                    p1Index = newNodes.size();
                     p2Index = p2IndexPair->second;
                 }
                 else
                 {
-                    newNode = grid_.getNodePos(edge[1]);
+                    newNode = grid_.getNodePos(e.getNodeIdxs().second);
                     p1Index = p1IndexPair->second;
-                    p2Index = nodes.size();
+                    p2Index = newNodes.size();
                 }
 
                 double deltaLength = newNode.dot(cutPlaneNormal) / edgeVec.dot(cutPlaneNormal);
 
                 newNode -= (deltaLength * edgeVec);
-                edgeLength = grid_.getEdgeLen(e) - abs(deltaLength);
-                nodes.push_back(newNode);
-                fixedGridNodes_[nodes.size() - 1] = true;
+                edgeLength = e.getLength() - abs(deltaLength);
+                newNodes.push_back(newNode);
+                newFixedNodes.insert(newNodes.size() - 1);
             }
 
-            edges.push_back({p1Index, p2Index});
-            edgeLengths.push_back(edgeLength);
+            newEdgeLenC.emplace_back(grid_, p1Index, p2Index, edgeLength);
         }
 
-        Eigen::Matrix3Xd nodeMatrix(3, nodes.size());
-        for(int n = 0; n < nodes.size(); n++)
-            nodeMatrix.col(n) = nodes[n];
-        
-        Eigen::Array2Xi edgeMatrix(2, edges.size());
-        Eigen::ArrayXd edgeLengthsArray(edgeLengths.size());
-        for(int e = 0; e < edges.size(); e++)
-        {
-            edgeMatrix.col(e) = Eigen::Array2i{edges[e].first, edges[e].second};
-            edgeLengthsArray[e] = edgeLengths[e];
-        }
+        Eigen::Matrix3Xd newNodeMatrix(3, newNodes.size());
+        for(int n = 0; n < newNodes.size(); n++)
+            newNodeMatrix.col(n) = newNodes[n];
 
-        grid_ = Grid(nodeMatrix, edgeMatrix, edgeLengthsArray);
-        shapeConstraint_ = false;
+        grid_ = Grid(newNodeMatrix, newEdgeLenC, newFixedNodes);
     }
 };
 
