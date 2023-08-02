@@ -86,7 +86,7 @@ public:
             if(grid_.isNodeFixed(n))
                 continue;
             
-            currDist = grid_.getNodePos(n).squaredNorm();
+            currDist = grid_.getNodePos(n).norm();
             currDelta = radius_ - currDist; 
             if(currDelta > 0)
             {
