@@ -20,11 +20,11 @@ struct Grid
          Eigen::Vector3d xTangVec, Eigen::Vector3d yTangVec, double edgeLength)
         : pos(3, nRows * nCols)
     {
-        double width  = (double)(nCols -  1) * edgeLength / 2.0;
-        double height = (double)(nRows -  1) * edgeLength / 2.0;
+        double width  = (double)(nCols -  1) * edgeLength;
+        double height = (double)(nRows -  1) * edgeLength;
         xTangVec.normalize();
         yTangVec.normalize();
-        Eigen::Vector3d gridOrigin = center - (width * xTangVec) - (height * yTangVec);
+        Eigen::Vector3d gridOrigin = center - (width/2.0 * xTangVec) - (height/2.0 * yTangVec);
 
         edgeLenCs.reserve(2 * nRows * nCols - nRows - nCols);
 
@@ -34,7 +34,7 @@ struct Grid
             int row = n / nCols;
             int col = n - (row * nCols);
 
-            pos.col(n) = gridOrigin + (row * edgeLength) * xTangVec + (col * edgeLength) * yTangVec;
+            pos.col(n) = gridOrigin + (row * edgeLength) * yTangVec + (col * edgeLength) * xTangVec;
 
             if(col != nCols - 1)
                 edgeLenCs.emplace_back(*this, n, n+1, edgeLength);
