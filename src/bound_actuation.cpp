@@ -12,12 +12,16 @@
 
 
 #define N_GRIDS 2
-#define GRID_COLS  10
-#define GRID_ROWS 10
+#define MAX_GRID_COLS 10
+
 #define GRID_EDGE_LEN 0.2
+#define GRID_1_COLS 6
+#define GRID_1_ROWS 4
 #define GRID_1_CENTER Eigen::Vector3d{0, 1, 0}
 #define GRID_1_X_TANG_VEC Eigen::Vector3d{1, 0, 0}
 #define GRID_1_Y_TANG_VEC Eigen::Vector3d{0, 0, 1}
+#define GRID_2_COLS 4
+#define GRID_2_ROWS 10
 #define GRID_2_CENTER Eigen::Vector3d{0, 0.5, 0}
 #define GRID_2_X_TANG_VEC Eigen::Vector3d{1, 0, 1}
 #define GRID_2_Y_TANG_VEC Eigen::Vector3d{-1, 0, 1}
@@ -47,8 +51,8 @@ public:
     MainApp()
         : App("Boundary actuation", Eigen::Vector2i{1000, 800}, true),
           grids_{
-              Grid(GRID_1_CENTER, GRID_ROWS, GRID_COLS, GRID_1_X_TANG_VEC, GRID_1_Y_TANG_VEC, GRID_EDGE_LEN),
-              Grid(GRID_2_CENTER, GRID_ROWS, GRID_COLS, GRID_2_X_TANG_VEC, GRID_2_Y_TANG_VEC, GRID_EDGE_LEN)
+              Grid(GRID_1_CENTER, GRID_1_ROWS, GRID_1_COLS, GRID_1_X_TANG_VEC, GRID_1_Y_TANG_VEC, GRID_EDGE_LEN),
+              Grid(GRID_2_CENTER, GRID_2_ROWS, GRID_2_COLS, GRID_2_X_TANG_VEC, GRID_2_Y_TANG_VEC, GRID_EDGE_LEN)
           },
           gridColors_{
               {0x68, 0x2b, 0x68},
@@ -263,8 +267,8 @@ private:
 
     std::tuple<GLubyte, GLubyte, GLubyte> node2color(int i)
     {
-        int row = i / GRID_COLS;
-        int col = i - (row * GRID_COLS);
+        int row = i / MAX_GRID_COLS;
+        int col = i - (row * MAX_GRID_COLS);
         return {(GLubyte)row+1, (GLubyte)col+1, 0};
     }
 
@@ -273,7 +277,7 @@ private:
         if(b != 0)
             return -1;
 
-        return (r-1) * GRID_COLS + (g-1);
+        return (r-1) * MAX_GRID_COLS + (g-1);
     }
 
 
