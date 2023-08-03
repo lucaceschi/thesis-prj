@@ -1,3 +1,6 @@
+#ifndef CONSTRAINTS_HPP_
+#define CONSTRAINTS_HPP_
+
 #include "grid.hpp"
 
 #include <Eigen/Dense>
@@ -107,3 +110,6 @@ private:
     Grid& grid_;
     double radius_;
 };
+
+
+#endif
