@@ -61,8 +61,9 @@ private:
 class SphereCollConstr : public HardConstraint
 {
 public:
-    SphereCollConstr(Grid& grid, double radius)
+    SphereCollConstr(Grid& grid, Eigen::Vector3d centerPos, double radius)
         : grid_(grid),
+          centerPos_(centerPos),
           radius_(radius)
     {}
 
@@ -72,7 +73,7 @@ public:
         
         for(int n = 0; n < grid_.getNNodes(); n++)
         {
-            currDelta = radius_ - grid_.getNodePos(n).squaredNorm(); 
+            currDelta = radius_ - (grid_.getNodePos(n) - centerPos_).squaredNorm(); 
             if(currDelta > 0)
                 totValue += currDelta;
         }
@@ -89,16 +90,16 @@ public:
             if(grid_.isNodeFixed(n))
                 continue;
             
-            currDist = grid_.getNodePos(n).norm();
+            currDist = (grid_.getNodePos(n) - centerPos_).norm();
             currDelta = radius_ - currDist; 
             if(currDelta > 0)
             {
                 totValue += currDelta;
                 
-                if(grid_.getNodePos(n).isZero())
-                    grid_.getNodePos(n) = Eigen::Vector3d{0, radius_, 0};
+                if((grid_.getNodePos(n) - centerPos_).isZero())
+                    grid_.getNodePos(n) += Eigen::Vector3d{0, radius_, 0};
                 else
-                    grid_.getNodePos(n) *= (radius_ / currDist);
+                    grid_.getNodePos(n) = (grid_.getNodePos(n) - centerPos_) * (radius_ / currDist) + centerPos_;
             }
         }
 
@@ -108,6 +109,7 @@ public:
 
 private:
     Grid& grid_;
+    Eigen::Vector3d centerPos_;
     double radius_;
 };
 

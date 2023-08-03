@@ -14,20 +14,7 @@
 #define N_GRIDS 2
 #define MAX_GRID_COLS 10
 
-#define GRID_EDGE_LEN 0.2
-#define GRID_1_COLS 6
-#define GRID_1_ROWS 4
-#define GRID_1_CENTER Eigen::Vector3d{0, 1, 0}
-#define GRID_1_X_TANG_VEC Eigen::Vector3d{1, 0, 0}
-#define GRID_1_Y_TANG_VEC Eigen::Vector3d{0, 0, 1}
-#define GRID_2_COLS 4
-#define GRID_2_ROWS 10
-#define GRID_2_CENTER Eigen::Vector3d{0, 0.5, 0}
-#define GRID_2_X_TANG_VEC Eigen::Vector3d{1, 0, 1}
-#define GRID_2_Y_TANG_VEC Eigen::Vector3d{-1, 0, 1}
-
 #define SIM_GRAV_SHIFT 1e-2
-#define SIM_SPHERE_RADIUS 0.5
 #define SIM_TOL 1e-2
 #define SIM_MAX_ITERS 1000
 
@@ -51,8 +38,8 @@ public:
     MainApp()
         : App("Boundary actuation", Eigen::Vector2i{1000, 800}, true),
           grids_{
-              Grid(GRID_1_CENTER, GRID_1_ROWS, GRID_1_COLS, GRID_1_X_TANG_VEC, GRID_1_Y_TANG_VEC, GRID_EDGE_LEN),
-              Grid(GRID_2_CENTER, GRID_2_ROWS, GRID_2_COLS, GRID_2_X_TANG_VEC, GRID_2_Y_TANG_VEC, GRID_EDGE_LEN)
+              Grid({0, 1, 0},   5, 10, {1, 0, 0}, {0, 0, 1},  0.2),
+              Grid({0, 0.5, 0}, 10, 5, {1, 0, 1}, {-1, 0, 1}, 0.2)
           },
           gridColors_{
               {0x68, 0x2b, 0x68},
@@ -64,8 +51,10 @@ public:
           simCollision_(false),
           simIters_(0)
     {
-        sphereCollCs_.emplace_back(grids_[0], SIM_SPHERE_RADIUS);
-        sphereCollCs_.emplace_back(grids_[1], SIM_SPHERE_RADIUS);
+        sphereCollCs_.emplace_back(grids_[0], Eigen::Vector3d{0.2, 0, 0}, 0.5);
+        sphereCollCs_.emplace_back(grids_[1], Eigen::Vector3d{0.2, 0, 0}, 0.5);
+        sphereCollCs_.emplace_back(grids_[0], Eigen::Vector3d{-0.2, 0, 0}, 0.5);
+        sphereCollCs_.emplace_back(grids_[1], Eigen::Vector3d{-0.2, 0, 0}, 0.5);
     }
 
 private:
