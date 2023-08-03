@@ -10,10 +10,9 @@ class EdgeLenConstr;
 
 struct Grid
 {
-    Grid(Eigen::Matrix3Xd nodePos, std::vector<EdgeLenConstr> edgeLenConstraints,
-         std::unordered_set<int> fixedNodes)
+    Grid(Eigen::Matrix3Xd nodePos, std::vector<EdgeLenConstr> edgeLenConstraints, std::unordered_set<int> fixedNodes)
         : pos(nodePos),
-          edgeLenC(edgeLenConstraints),
+          edgeLenCs(edgeLenConstraints),
           fixedNodes(fixedNodes)
     {}
     
@@ -23,9 +22,11 @@ struct Grid
     {
         double width  = (double)(nCols -  1) * edgeLength / 2.0;
         double height = (double)(nRows -  1) * edgeLength / 2.0;
+        xTangVec.normalize();
+        yTangVec.normalize();
         Eigen::Vector3d gridOrigin = center - (width * xTangVec) - (height * yTangVec);
-        
-        edgeLenC.reserve(2 * nRows * nCols - nRows - nCols);
+
+        edgeLenCs.reserve(2 * nRows * nCols - nRows - nCols);
 
         for(int n = 0; n < (nRows * nCols); n++)
         {
@@ -36,14 +37,13 @@ struct Grid
             pos.col(n) = gridOrigin + (row * edgeLength) * xTangVec + (col * edgeLength) * yTangVec;
 
             if(col != nCols - 1)
-                edgeLenC.emplace_back(*this, n, n+1, edgeLength);
+                edgeLenCs.emplace_back(*this, n, n+1, edgeLength);
             if(row != nRows - 1)
-                edgeLenC.emplace_back(*this, n, n+nCols, edgeLength);
+                edgeLenCs.emplace_back(*this, n, n+nCols, edgeLength);
         }
     }
 
     int getNNodes() const { return pos.cols(); }
-    int getNEdges() const { return edgeLenC.size(); }
 
     Eigen::Block<Eigen::Matrix3Xd, 3, 1, true> getNodePos(int idx) { return pos.col(idx); }
     bool isNodeFixed(int idx) const {
@@ -51,8 +51,8 @@ struct Grid
         return it != fixedNodes.end();
     }
     
+    std::vector<EdgeLenConstr> edgeLenCs;
     Eigen::Matrix3Xd pos;
-    std::vector<EdgeLenConstr> edgeLenC;
     std::unordered_set<int> fixedNodes;
 };
 
