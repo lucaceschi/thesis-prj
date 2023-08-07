@@ -144,7 +144,7 @@ private:
 
                     Eigen::Vector4d worldPos = (projectionMat * modelviewMat).inverse() * curPosHom;
 
-                    grids_[pick_.gridIdx].getNodePos(pick_.nodeIdx) = Eigen::Vector3d{
+                    grids_[pick_.gridIdx].nodePos(pick_.nodeIdx) = Eigen::Vector3d{
                         worldPos(0) / worldPos(3),
                         worldPos(1) / worldPos(3),
                         worldPos(2) / worldPos(3)
@@ -202,8 +202,8 @@ private:
         glBegin(GL_LINES);
         for(const EdgeLenConstr& e : grids_[gridIdx].edgeLenCs)
         {
-            const Eigen::Vector3d nodePosA = grid.getNodePos(e.getNodeIdxs().first);
-            const Eigen::Vector3d nodePosB = grid.getNodePos(e.getNodeIdxs().second);
+            const Eigen::Vector3d nodePosA = grid.nodePos(e.getNodeIdxs().first);
+            const Eigen::Vector3d nodePosB = grid.nodePos(e.getNodeIdxs().second);
             glVertex3d(nodePosA(0), nodePosA(1), nodePosA(2));
             glVertex3d(nodePosB(0), nodePosB(1), nodePosB(2));
         }
@@ -221,7 +221,7 @@ private:
             else
                 glColor3ub(gridColors_[gridIdx][0], gridColors_[gridIdx][1], gridColors_[gridIdx][2]);
 
-            const Eigen::Vector3d nodePos = grid.getNodePos(n);
+            const Eigen::Vector3d nodePos = grid.nodePos(n);
             glVertex3d(nodePos(0), nodePos(1), nodePos(2));
         }
         glEnd();
@@ -247,7 +247,7 @@ private:
             std::tie(r, g, b) = node2color(n);
             glColor3ub(r, g, b);
 
-            const Eigen::Vector3d nodePos = grid.getNodePos(n);
+            const Eigen::Vector3d nodePos = grid.nodePos(n);
             glVertex3d(nodePos(0), nodePos(1), nodePos(2));
         }
         glEnd();
@@ -278,7 +278,7 @@ private:
                 if(grids_[g].isNodeFixed(n))
                     continue;
 
-                grids_[g].getNodePos(n) -= Eigen::Vector3d{0, SIM_GRAV_SHIFT, 0};
+                grids_[g].nodePos(n) -= Eigen::Vector3d{0, SIM_GRAV_SHIFT, 0};
             }
         
         bool stop = false;
@@ -332,7 +332,7 @@ private:
 
             for(int n = 0; n < grid.getNNodes(); n++)
             {
-                const Eigen::Vector3d p = grid.getNodePos(n);
+                const Eigen::Vector3d p = grid.nodePos(n);
 
                 // only preserve nodes above the cutting plane
                 if(p(1) < 0)
@@ -366,18 +366,18 @@ private:
                     // edge crosses the cutting plane: retrieve the node below the cutting plane
                     // and move it to the closest intersection between the edge and the plane
 
-                    Eigen::Vector3d edgeVec = (grid.getNodePos(e.getNodeIdxs().first) - grid.getNodePos(e.getNodeIdxs().second)).normalized();
+                    Eigen::Vector3d edgeVec = (grid.nodePos(e.getNodeIdxs().first) - grid.nodePos(e.getNodeIdxs().second)).normalized();
                     Eigen::Vector3d newNode;
 
                     if(p1IndexPair == nodeIndexMap.end())
                     {
-                        newNode = grid.getNodePos(e.getNodeIdxs().first);
+                        newNode = grid.nodePos(e.getNodeIdxs().first);
                         p1Index = newNodes.size();
                         p2Index = p2IndexPair->second;
                     }
                     else
                     {
-                        newNode = grid.getNodePos(e.getNodeIdxs().second);
+                        newNode = grid.nodePos(e.getNodeIdxs().second);
                         p1Index = p1IndexPair->second;
                         p2Index = newNodes.size();
                     }

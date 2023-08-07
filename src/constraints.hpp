@@ -25,24 +25,24 @@ public:
 
     virtual double value() const
     {
-        return (grid_.getNodePos(nodeIdxs_.first) - grid_.getNodePos(nodeIdxs_.second)).norm();
+        return (grid_.nodePos(nodeIdxs_.first) - grid_.nodePos(nodeIdxs_.second)).norm();
     }
 
     virtual double resolve() const
     {
-        Eigen::Vector3d v = grid_.getNodePos(nodeIdxs_.first) - grid_.getNodePos(nodeIdxs_.second);
+        Eigen::Vector3d v = grid_.nodePos(nodeIdxs_.first) - grid_.nodePos(nodeIdxs_.second);
         double dist = v.norm();
         v.normalize();
         double delta = (len_ - dist);
 
         if(grid_.isNodeFixed(nodeIdxs_.first))
-            grid_.getNodePos(nodeIdxs_.second) -= delta * v;
+            grid_.nodePos(nodeIdxs_.second) -= delta * v;
         else if(grid_.isNodeFixed(nodeIdxs_.second))
-            grid_.getNodePos(nodeIdxs_.first) += delta * v;
+            grid_.nodePos(nodeIdxs_.first) += delta * v;
         else
         {
-            grid_.getNodePos(nodeIdxs_.first) += delta/2.0 * v;
-            grid_.getNodePos(nodeIdxs_.second) -= delta/2.0 * v;
+            grid_.nodePos(nodeIdxs_.first) += delta/2.0 * v;
+            grid_.nodePos(nodeIdxs_.second) -= delta/2.0 * v;
         }
 
         return std::abs(delta);
@@ -73,7 +73,7 @@ public:
         
         for(int n = 0; n < grid_.getNNodes(); n++)
         {
-            currDelta = radius_ - (grid_.getNodePos(n) - centerPos_).squaredNorm(); 
+            currDelta = radius_ - (grid_.nodePos(n) - centerPos_).squaredNorm(); 
             if(currDelta > 0)
                 totValue += currDelta;
         }
@@ -90,16 +90,16 @@ public:
             if(grid_.isNodeFixed(n))
                 continue;
             
-            currDist = (grid_.getNodePos(n) - centerPos_).norm();
+            currDist = (grid_.nodePos(n) - centerPos_).norm();
             currDelta = radius_ - currDist; 
             if(currDelta > 0)
             {
                 totValue += currDelta;
                 
-                if((grid_.getNodePos(n) - centerPos_).isZero())
-                    grid_.getNodePos(n) += Eigen::Vector3d{0, radius_, 0};
+                if((grid_.nodePos(n) - centerPos_).isZero())
+                    grid_.nodePos(n) += Eigen::Vector3d{0, radius_, 0};
                 else
-                    grid_.getNodePos(n) = (grid_.getNodePos(n) - centerPos_) * (radius_ / currDist) + centerPos_;
+                    grid_.nodePos(n) = (grid_.nodePos(n) - centerPos_) * (radius_ / currDist) + centerPos_;
             }
         }
 

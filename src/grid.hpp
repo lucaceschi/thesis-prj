@@ -45,7 +45,7 @@ struct Grid
 
     int getNNodes() const { return pos.cols(); }
 
-    Eigen::Block<Eigen::Matrix3Xd, 3, 1, true> getNodePos(int idx) { return pos.col(idx); }
+    Eigen::Block<Eigen::Matrix3Xd, 3, 1, true> nodePos(int idx) { return pos.col(idx); }
     bool isNodeFixed(int idx) const {
         auto it = fixedNodes.find(idx);
         return it != fixedNodes.end();
