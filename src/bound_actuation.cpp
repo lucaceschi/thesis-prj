@@ -15,8 +15,10 @@
 #define MAX_GRID_COLS 10
 
 #define SIM_GRAV_SHIFT 1e-2
-#define SIM_TOL 1e-2
-#define SIM_MAX_ITERS 1000
+#define SIM_TOL 1e-3
+#define SIM_MAX_ITERS 5000
+#define SIM_SCISSOR_EE_MIN_DIST 1e-3
+#define SIM_SCISSOR_CC_MIN_DIST 1e-1
 
 
 struct Pick
@@ -38,18 +40,16 @@ public:
     MainApp()
         : App("Boundary actuation", Eigen::Vector2i{1000, 800}, true),
           grids_{
-              Grid({0, 1, 0},   5, 10, {1, 0, 0}, {0, 0, 1},  0.2),
-              Grid({0, 0.5, 0}, 10, 5, {1, 0, 1}, {-1, 0, 1}, 0.2)
+              Grid({0, 1, 0},   3, 3, {1, 0, 0}, {0, 0, 1},  0.2),
+              Grid({0, 0.5, 0}, 3, 3, {1, 0, 1}, {-1, 0, 1}, 0.2)
           },
           edgeLenCs_{
               EdgeLenConstr(&grids_[0], 0.2),
               EdgeLenConstr(&grids_[1], 0.2)
           },
           sphereCollCs_{
-              SphereCollConstr(&grids_[0], Eigen::Vector3d{0.2, 0, 0}, 0.5),
-              SphereCollConstr(&grids_[1], Eigen::Vector3d{0.2, 0, 0}, 0.5),
-              SphereCollConstr(&grids_[0], Eigen::Vector3d{-0.2, 0, 0}, 0.5),
-              SphereCollConstr(&grids_[1], Eigen::Vector3d{-0.2, 0, 0}, 0.5)
+              SphereCollConstr(&grids_[0], Eigen::Vector3d{0, 0, 0}, 0.5),
+              SphereCollConstr(&grids_[1], Eigen::Vector3d{0, 0, 0}, 0.5)
           },
           gridColors_{
               {0x68, 0x2b, 0x68},
@@ -60,15 +60,14 @@ public:
           playSim_(false),
           simCollision_(false),
           simIters_(0)
-    {
-
-    }
+    {}
 
 private:
     Grid grids_[N_GRIDS];
     const GLubyte gridColors_[N_GRIDS][3];
     EdgeLenConstr edgeLenCs_[N_GRIDS];
-    SphereCollConstr sphereCollCs_[2 * N_GRIDS];
+    SphereCollConstr sphereCollCs_[N_GRIDS];
+    std::vector<ScissorConstr> scissorCs_;
 
     const GLubyte bgColorRender_[3];
     const GLubyte bgColorPicking_[3];
@@ -80,6 +79,8 @@ private:
     bool simCollision_;
     int simIters_;
     std::vector<float> simDeltas_;
+
+    bool bla = false;
 
 
     virtual bool initApp()
@@ -234,6 +235,20 @@ private:
         }
         glEnd();
 
+        // Draw scissor constr
+
+        glPointSize(10.0f);
+        glColor3ub(0x00, 0x00, 0xff);
+        glBegin(GL_POINTS);
+        for(const ScissorConstr& s : scissorCs_)
+        {
+            Eigen::Vector3d midpointA = s.getMidpointA();
+            Eigen::Vector3d midpointB = s.getMidpointB();
+            glVertex3d(midpointA(0), midpointA(1), midpointA(2));
+            glVertex3d(midpointB(0), midpointB(1), midpointB(2));
+        }
+        glEnd();
+
         trackball_.DrawPostApply();
     }
 
@@ -279,7 +294,7 @@ private:
 
 
     int simGrids(double deltaTime)
-    {        
+    {
         for(int g = 0; g < N_GRIDS; g++)
             for(int n = 0; n < grids_[g].getNNodes(); n++)
             {
@@ -302,6 +317,9 @@ private:
             for(const EdgeLenConstr& e : edgeLenCs_)
                 totDelta += e.resolve();
 
+            for(const ScissorConstr& s : scissorCs_)
+                totDelta += s.resolve();
+
             if(simCollision_)
                 for(const SphereCollConstr& s : sphereCollCs_)
                     totDelta += s.resolve();
@@ -320,6 +338,42 @@ private:
 
             nIters++;
         }
+
+        std::pair<double, double> alphaBeta;
+        int nAdded = 0;
+        for(int gA = 0; gA < N_GRIDS-1; gA++)
+            for(int gB = gA+1; gB < N_GRIDS; gB++)
+                for(int eA = 0; eA < grids_[gA].getNEdges(); eA++)
+                    for(int eB = 0; eB < grids_[gB].getNEdges(); eB++)
+                        if(ScissorConstr::checkEdgeProx(grids_[gA], grids_[gA].edge(eA)[0], grids_[gA].edge(eA)[1],
+                                                        grids_[gB], grids_[gB].edge(eB)[0], grids_[gB].edge(eB)[1],
+                                                        SIM_SCISSOR_EE_MIN_DIST, alphaBeta))
+                        {
+                            ScissorConstr s = ScissorConstr(&grids_[gA], grids_[gA].edge(eA)[0], grids_[gA].edge(eA)[1], alphaBeta.first,
+                                                            &grids_[gB], grids_[gB].edge(eB)[0], grids_[gB].edge(eB)[1], alphaBeta.second);
+
+                            Eigen::Vector3d midpoint = (s.getMidpointA() + s.getMidpointB()) / 2;
+                            bool acceptable = true;
+                            for(const ScissorConstr& otherS : scissorCs_)
+                            {
+                                Eigen::Vector3d otherMidpoint = (otherS.getMidpointA() + otherS.getMidpointB()) / 2;
+                                if((midpoint - otherMidpoint).norm() < SIM_SCISSOR_CC_MIN_DIST)
+                                {
+                                    acceptable = false;
+                                    break;
+                                }
+                            }
+
+                            if(acceptable)
+                            {
+                                nAdded++;
+                                scissorCs_.emplace_back(&grids_[gA], grids_[gA].edge(eA)[0], grids_[gA].edge(eA)[1], alphaBeta.first,
+                                                        &grids_[gB], grids_[gB].edge(eB)[0], grids_[gB].edge(eB)[1], alphaBeta.second);
+                            }
+                        }
+
+        if(nAdded > 0)
+            frmwrk::Debug::log("Addedd %d new scissor constraints", nAdded);
 
         return nIters;
     }

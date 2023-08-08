@@ -5,6 +5,8 @@
 
 #include <Eigen/Dense>
 
+#define SMALL_NUM 1e-12
+
 
 class HardConstraint
 {
@@ -118,12 +120,153 @@ public:
 
         return totValue;
     }
-          
 
     Eigen::Vector3d centerPos_;
 private:
     Grid* grid_;
     double radius_;
+};
+
+
+class ScissorConstr : public HardConstraint
+{
+public:
+    ScissorConstr(Grid* gridA, int nodeA1Indx, int nodeA2Indx, double alpha,
+                  Grid* gridB, int nodeB1Indx, int nodeB2Indx, double beta)
+        : gridA_(gridA),
+          nodeA1_(nodeA1Indx),
+          nodeA2_(nodeA2Indx),
+          alpha_(alpha),
+          gridB_(gridB),
+          nodeB1_(nodeB1Indx),
+          nodeB2_(nodeB2Indx),
+          beta_(beta)
+    {}
+
+    static bool checkEdgeProx(Grid& gridA, int nodeA1Indx, int nodeA2Indx,
+                              Grid& gridB, int nodeB1Indx, int nodeB2Indx,
+                              double tol, std::pair<double, double>& res)
+    {
+        return edge2edgeDist(gridA, nodeA1Indx, nodeA2Indx, gridB, nodeB1Indx, nodeB2Indx, res) < tol;
+    }
+
+    virtual double value() const
+    {
+        return (getMidpointA() - getMidpointB()).norm();
+    }
+
+    virtual double resolve() const
+    {
+        Eigen::Vector3d midpointA = getMidpointA();
+        Eigen::Vector3d midpointB = getMidpointB();
+
+        Eigen::Vector3d shiftDir = midpointB - midpointA;
+        double delta = shiftDir.norm();
+        shiftDir.normalize();
+
+        gridA_->nodePos(nodeA1_) += delta/2 * shiftDir;
+        gridA_->nodePos(nodeA2_) += delta/2 * shiftDir;
+        gridB_->nodePos(nodeB1_) -= delta/2 * shiftDir;
+        gridB_->nodePos(nodeB2_) -= delta/2 * shiftDir;
+
+        return delta * 2;
+    }
+
+    Grid* getGridA() const { return gridA_; }
+    Grid* getGridB() const { return gridB_; }
+    int getNodeA1Indx() const { return nodeA1_; }
+    int getNodeA2Indx() const { return nodeA2_; }
+    int getNodeB1Indx() const { return nodeB1_; }
+    int getNodeB2Indx() const { return nodeB2_; }
+    std::pair<int, int> getAlphaBeta() const { return std::make_pair(alpha_, beta_); }
+
+    inline Eigen::Vector3d getMidpointA() const
+    {
+        return gridA_->nodePos(nodeA1_) + alpha_ * (gridA_->nodePos(nodeA2_) - gridA_->nodePos(nodeA1_));
+    }
+
+    inline Eigen::Vector3d getMidpointB() const
+    {
+        return gridB_->nodePos(nodeB1_) + beta_  * (gridB_->nodePos(nodeB2_) - gridB_->nodePos(nodeB1_));
+    }
+
+private:
+
+    static double edge2edgeDist(Grid& gridA, int nodeA1Indx, int nodeA2Indx,
+                                Grid& gridB, int nodeB1Indx, int nodeB2Indx,
+                                std::pair<double, double>& res)
+    {
+        Eigen::Vector3d u = gridA.nodePos(nodeA2Indx) - gridA.nodePos(nodeA1Indx);
+        Eigen::Vector3d v = gridB.nodePos(nodeB2Indx) - gridB.nodePos(nodeB1Indx);
+        Eigen::Vector3d w = gridA.nodePos(nodeA1Indx) - gridB.nodePos(nodeB1Indx);
+        double a = u.dot(u);
+        double b = u.dot(v);
+        double c = v.dot(v);
+        double d = u.dot(w);
+        double e = v.dot(w);
+        double D = a*c - b*b;
+        double sc, sN, sD = D;
+        double tc, tN, tD = D;
+
+        if (D < SMALL_NUM) {
+            sN = 0.0;
+            sD = 1.0;
+            tN = e;
+            tD = c;
+        }
+        else {
+            sN = (b*e - c*d);
+            tN = (a*e - b*d);
+            if (sN < 0.0) {
+                sN = 0.0;
+                tN = e;
+                tD = c;
+            }
+            else if (sN > sD) {
+                sN = sD;
+                tN = e + b;
+                tD = c;
+            }
+        }
+
+        if (tN < 0.0) {
+            tN = 0.0;
+ 
+            if (-d < 0.0)
+                sN = 0.0;
+            else if (-d > a)
+                sN = sD;
+            else {
+                sN = -d;
+                sD = a;
+            }
+        }
+        else if (tN > tD) {
+            tN = tD;
+ 
+            if ((-d + b) < 0.0)
+                sN = 0;
+            else if ((-d + b) > a)
+                sN = sD;
+            else {
+                sN = (-d +  b);
+                sD = a;
+            }
+        }
+ 
+        sc = (abs(sN) < SMALL_NUM ? 0.0 : sN / sD);
+        tc = (abs(tN) < SMALL_NUM ? 0.0 : tN / tD);
+
+        res = std::make_pair(sc, tc);
+        return (w + (sc * u) - (tc * v)).norm();
+    }
+
+    Grid* gridA_;
+    int nodeA1_, nodeA2_;
+    double alpha_;
+    Grid* gridB_;
+    int nodeB1_, nodeB2_;
+    double beta_;
 };
 
 
