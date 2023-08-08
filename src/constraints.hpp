@@ -17,51 +17,64 @@ public:
 class EdgeLenConstr : public HardConstraint
 {
 public:
-    EdgeLenConstr(Grid& grid, int nodeAIdx, int nodeBIdx, double length)
+    EdgeLenConstr(Grid* grid, double length)
         : grid_(grid),
-          nodeIdxs_(nodeAIdx, nodeBIdx),
-          len_(length)
+          lens_(grid->getNEdges(), length)
+    {}
+
+    EdgeLenConstr(Grid* grid, std::vector<double> lengths)
+        : grid_(grid),
+          lens_(lengths)
     {}
 
     virtual double value() const
     {
-        return (grid_.getNodePos(nodeIdxs_.first) - grid_.getNodePos(nodeIdxs_.second)).norm();
+        double v = 0.0;
+        for(int e = 0; e < grid_->getNEdges(); e++)
+            v += (grid_->getNodePos(grid_->edge(e)[0]) - grid_->getNodePos(grid_->edge(e)[1])).norm();
+
+        return v;
     }
 
     virtual double resolve() const
     {
-        Eigen::Vector3d v = grid_.getNodePos(nodeIdxs_.first) - grid_.getNodePos(nodeIdxs_.second);
-        double dist = v.norm();
-        v.normalize();
-        double delta = (len_ - dist);
-
-        if(grid_.isNodeFixed(nodeIdxs_.first))
-            grid_.getNodePos(nodeIdxs_.second) -= delta * v;
-        else if(grid_.isNodeFixed(nodeIdxs_.second))
-            grid_.getNodePos(nodeIdxs_.first) += delta * v;
-        else
+        double totDelta = 0.0;
+        
+        for(int e = 0; e < grid_->getNEdges(); e++)
         {
-            grid_.getNodePos(nodeIdxs_.first) += delta/2.0 * v;
-            grid_.getNodePos(nodeIdxs_.second) -= delta/2.0 * v;
+            Eigen::Vector3d v = grid_->getNodePos(grid_->edge(e)[0]) - grid_->getNodePos(grid_->edge(e)[1]);
+            double dist = v.norm();
+            v.normalize();
+            double delta = (lens_[e] - dist);
+
+            if(grid_->isNodeFixed(grid_->edge(e)[0]))
+                grid_->getNodePos(grid_->edge(e)[1]) -= delta * v;
+            else if(grid_->isNodeFixed(grid_->edge(e)[1]))
+                grid_->getNodePos(grid_->edge(e)[0]) += delta * v;
+            else
+            {
+                grid_->getNodePos(grid_->edge(e)[0]) += delta/2.0 * v;
+                grid_->getNodePos(grid_->edge(e)[1]) -= delta/2.0 * v;
+            }
+
+            totDelta += std::abs(delta);
         }
 
-        return std::abs(delta);
+        return totDelta;
     }
 
-    std::pair<int, int> getNodeIdxs() const { return nodeIdxs_; }
-    double getLength() const { return len_; }
+    double getLength(int e) const { return lens_[e]; }
 
 private:
-    Grid& grid_;
-    std::pair<int, int> nodeIdxs_;
-    double len_;
+    Grid* grid_;
+    std::vector<double> lens_;
 };
 
 
 class SphereCollConstr : public HardConstraint
 {
 public:
-    SphereCollConstr(Grid& grid, double radius)
+    SphereCollConstr(Grid* grid, Eigen::Vector3d centerPos, double radius)
         : grid_(grid),
           radius_(radius)
     {}
@@ -70,9 +83,9 @@ public:
     {
         double currDelta, totValue = 0;
         
-        for(int n = 0; n < grid_.getNNodes(); n++)
+        for(int n = 0; n < grid_->getNNodes(); n++)
         {
-            currDelta = radius_ - grid_.getNodePos(n).squaredNorm(); 
+            currDelta = radius_ - (grid_->getNodePos(n) - centerPos_).squaredNorm(); 
             if(currDelta > 0)
                 totValue += currDelta;
         }
@@ -84,21 +97,21 @@ public:
     {
         double currDist, currDelta, totValue = 0;
         
-        for(int n = 0; n < grid_.getNNodes(); n++)
+        for(int n = 0; n < grid_->getNNodes(); n++)
         {
-            if(grid_.isNodeFixed(n))
+            if(grid_->isNodeFixed(n))
                 continue;
             
-            currDist = grid_.getNodePos(n).norm();
+            currDist = (grid_->getNodePos(n) - centerPos_).norm();
             currDelta = radius_ - currDist; 
             if(currDelta > 0)
             {
                 totValue += currDelta;
                 
-                if(grid_.getNodePos(n).isZero())
-                    grid_.getNodePos(n) = Eigen::Vector3d{0, radius_, 0};
+                if((grid_->getNodePos(n) - centerPos_).isZero())
+                    grid_->getNodePos(n) += Eigen::Vector3d{0, radius_, 0};
                 else
-                    grid_.getNodePos(n) *= (radius_ / currDist);
+                    grid_->getNodePos(n) = (grid_->getNodePos(n) - centerPos_) * (radius_ / currDist) + centerPos_;
             }
         }
 
@@ -106,8 +119,9 @@ public:
     }
           
 
+    Eigen::Vector3d centerPos_;
 private:
-    Grid& grid_;
+    Grid* grid_;
     double radius_;
 };
 
