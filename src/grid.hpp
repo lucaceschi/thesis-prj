@@ -10,15 +10,16 @@ class EdgeLenConstr;
 
 struct Grid
 {
-    Grid(Eigen::Matrix3Xd nodePos, std::vector<EdgeLenConstr> edgeLenConstraints, std::unordered_set<int> fixedNodes)
+    Grid(Eigen::Matrix3Xd nodePos, Eigen::Array2Xi edges, std::unordered_set<int> fixedNodes)
         : pos(nodePos),
-          edgeLenCs(edgeLenConstraints),
+          edges(edges),
           fixedNodes(fixedNodes)
     {}
     
     Grid(Eigen::Vector3d center, int nRows, int nCols,
          Eigen::Vector3d xTangVec, Eigen::Vector3d yTangVec, double edgeLength)
-        : pos(3, nRows * nCols)
+        : pos(3, nRows * nCols),
+          edges(2, 2 * nRows * nCols - nRows - nCols)
     {
         double width  = (double)(nCols -  1) * edgeLength;
         double height = (double)(nRows -  1) * edgeLength;
@@ -26,9 +27,7 @@ struct Grid
         yTangVec.normalize();
         Eigen::Vector3d gridOrigin = center - (width/2.0 * xTangVec) - (height/2.0 * yTangVec);
 
-        edgeLenCs.reserve(2 * nRows * nCols - nRows - nCols);
-
-        for(int n = 0; n < (nRows * nCols); n++)
+        for(int n = 0, e = 0; n < (nRows * nCols); n++)
         {
             // poor spatial locality? https://en.wikipedia.org/wiki/Z-order_curve
             int row = n / nCols;
@@ -37,22 +36,25 @@ struct Grid
             pos.col(n) = gridOrigin + (row * edgeLength) * yTangVec + (col * edgeLength) * xTangVec;
 
             if(col != nCols - 1)
-                edgeLenCs.emplace_back(*this, n, n+1, edgeLength);
+                edges.col(e++) = Eigen::Array2i{n, n+1};
             if(row != nRows - 1)
-                edgeLenCs.emplace_back(*this, n, n+nCols, edgeLength);
+                edges.col(e++) = Eigen::Array2i{n, n+nCols};
         }
     }
 
     int getNNodes() const { return pos.cols(); }
+    int getNEdges() const { return edges.cols(); }
 
-    Eigen::Block<Eigen::Matrix3Xd, 3, 1, true> nodePos(int idx) { return pos.col(idx); }
+    inline Eigen::Block<Eigen::Matrix3Xd, 3, 1, true> nodePos(int idx) { return pos.col(idx); }
+    inline Eigen::Block<Eigen::Array2Xi, 2, 1, true> edge(int idx) { return edges.col(idx); }
+    
     bool isNodeFixed(int idx) const {
         auto it = fixedNodes.find(idx);
         return it != fixedNodes.end();
     }
     
-    std::vector<EdgeLenConstr> edgeLenCs;
     Eigen::Matrix3Xd pos;
+    Eigen::Array2Xi edges;
     std::unordered_set<int> fixedNodes;
 };
 

@@ -41,6 +41,16 @@ public:
               Grid({0, 1, 0},   5, 10, {1, 0, 0}, {0, 0, 1},  0.2),
               Grid({0, 0.5, 0}, 10, 5, {1, 0, 1}, {-1, 0, 1}, 0.2)
           },
+          edgeLenCs_{
+              EdgeLenConstr(&grids_[0], 0.2),
+              EdgeLenConstr(&grids_[1], 0.2)
+          },
+          sphereCollCs_{
+              SphereCollConstr(&grids_[0], Eigen::Vector3d{0.2, 0, 0}, 0.5),
+              SphereCollConstr(&grids_[1], Eigen::Vector3d{0.2, 0, 0}, 0.5),
+              SphereCollConstr(&grids_[0], Eigen::Vector3d{-0.2, 0, 0}, 0.5),
+              SphereCollConstr(&grids_[1], Eigen::Vector3d{-0.2, 0, 0}, 0.5)
+          },
           gridColors_{
               {0x68, 0x2b, 0x68},
               {0x2b, 0x2b, 0x78}
@@ -51,15 +61,14 @@ public:
           simCollision_(false),
           simIters_(0)
     {
-        sphereCollCs_.emplace_back(grids_[0], Eigen::Vector3d{0.2, 0, 0}, 0.5);
-        sphereCollCs_.emplace_back(grids_[1], Eigen::Vector3d{0.2, 0, 0}, 0.5);
-        sphereCollCs_.emplace_back(grids_[0], Eigen::Vector3d{-0.2, 0, 0}, 0.5);
-        sphereCollCs_.emplace_back(grids_[1], Eigen::Vector3d{-0.2, 0, 0}, 0.5);
+
     }
 
 private:
     Grid grids_[N_GRIDS];
     const GLubyte gridColors_[N_GRIDS][3];
+    EdgeLenConstr edgeLenCs_[N_GRIDS];
+    SphereCollConstr sphereCollCs_[2 * N_GRIDS];
 
     const GLubyte bgColorRender_[3];
     const GLubyte bgColorPicking_[3];
@@ -67,7 +76,6 @@ private:
 
     vcg::Trackball trackball_;
 
-    std::vector<SphereCollConstr> sphereCollCs_;
     bool playSim_;
     bool simCollision_;
     int simIters_;
@@ -200,10 +208,10 @@ private:
         glLineWidth(3.0f);
 
         glBegin(GL_LINES);
-        for(const EdgeLenConstr& e : grids_[gridIdx].edgeLenCs)
+        for(int e = 0; e < grid.getNEdges(); e++)
         {
-            const Eigen::Vector3d nodePosA = grid.nodePos(e.getNodeIdxs().first);
-            const Eigen::Vector3d nodePosB = grid.nodePos(e.getNodeIdxs().second);
+            Eigen::Vector3d nodePosA = grid.nodePos(grid.edge(e)[0]);
+            Eigen::Vector3d nodePosB = grid.nodePos(grid.edge(e)[1]);
             glVertex3d(nodePosA(0), nodePosA(1), nodePosA(2));
             glVertex3d(nodePosB(0), nodePosB(1), nodePosB(2));
         }
@@ -291,9 +299,8 @@ private:
             stop = true;
             totDelta = 0;
             
-            for(int g = 0; g < N_GRIDS; g++)
-                for(const EdgeLenConstr& e : grids_[g].edgeLenCs)
-                    totDelta += e.resolve();
+            for(const EdgeLenConstr& e : edgeLenCs_)
+                totDelta += e.resolve();
 
             if(simCollision_)
                 for(const SphereCollConstr& s : sphereCollCs_)
@@ -327,7 +334,8 @@ private:
             
             std::vector<Eigen::Vector3d> newNodes;
             std::unordered_map<int, int> nodeIndexMap;
-            std::vector<EdgeLenConstr> newEdgeLenC;
+            std::vector<Eigen::Array2i> newEdges;
+            std::vector<double> newEdgeLengths;
             std::unordered_set<int> newFixedNodes;
 
             for(int n = 0; n < grid.getNNodes(); n++)
@@ -342,10 +350,10 @@ private:
                 nodeIndexMap[n] = newNodes.size() - 1;
             }
             
-            for(const EdgeLenConstr& e : grid.edgeLenCs)
+            for(int e = 0; e < grid.getNEdges(); e++)
             {
-                auto p1IndexPair = nodeIndexMap.find(e.getNodeIdxs().first);
-                auto p2IndexPair = nodeIndexMap.find(e.getNodeIdxs().second);
+                auto p1IndexPair = nodeIndexMap.find(grid.edge(e)[0]);
+                auto p2IndexPair = nodeIndexMap.find(grid.edge(e)[1]);
 
                 // scrap edges below the cutting plane
                 if(p1IndexPair == nodeIndexMap.end() && p2IndexPair == nodeIndexMap.end())
@@ -359,45 +367,51 @@ private:
                     // edge is above the cutting plane, preserve it
                     p1Index = p1IndexPair->second;
                     p2Index = p2IndexPair->second;
-                    edgeLength = e.getLength();
+                    edgeLength = edgeLenCs_[g].getLength(e);
                 }
                 else
                 {
                     // edge crosses the cutting plane: retrieve the node below the cutting plane
                     // and move it to the closest intersection between the edge and the plane
 
-                    Eigen::Vector3d edgeVec = (grid.nodePos(e.getNodeIdxs().first) - grid.nodePos(e.getNodeIdxs().second)).normalized();
-                    Eigen::Vector3d newNode;
+                    Eigen::Vector3d edgeVec = (grid.nodePos(grid.edge(e)[0]) - grid.nodePos(grid.edge(e)[1])).normalized();
+                    Eigen::Vector3d newNodePos;
 
                     if(p1IndexPair == nodeIndexMap.end())
                     {
-                        newNode = grid.nodePos(e.getNodeIdxs().first);
+                        newNodePos = grid.nodePos(grid.edge(e)[0]);
                         p1Index = newNodes.size();
                         p2Index = p2IndexPair->second;
                     }
                     else
                     {
-                        newNode = grid.nodePos(e.getNodeIdxs().second);
+                        newNodePos = grid.nodePos(grid.edge(e)[1]);
                         p1Index = p1IndexPair->second;
                         p2Index = newNodes.size();
                     }
 
-                    double deltaLength = newNode.dot(cutPlaneNormal) / edgeVec.dot(cutPlaneNormal);
+                    double deltaLength = newNodePos.dot(cutPlaneNormal) / edgeVec.dot(cutPlaneNormal);
 
-                    newNode -= (deltaLength * edgeVec);
-                    edgeLength = e.getLength() - abs(deltaLength);
-                    newNodes.push_back(newNode);
+                    newNodePos -= (deltaLength * edgeVec);
+                    edgeLength = edgeLenCs_[g].getLength(e) - abs(deltaLength);
+                    newNodes.push_back(newNodePos);
                     newFixedNodes.insert(newNodes.size() - 1);
                 }
 
-                newEdgeLenC.emplace_back(grid, p1Index, p2Index, edgeLength);
+                newEdges.emplace_back(p1Index, p2Index);
+                newEdgeLengths.push_back(edgeLength);
             }
 
             Eigen::Matrix3Xd newNodeMatrix(3, newNodes.size());
             for(int n = 0; n < newNodes.size(); n++)
                 newNodeMatrix.col(n) = newNodes[n];
 
-            grids_[g] = Grid(newNodeMatrix, newEdgeLenC, newFixedNodes);
+            Eigen::Array2Xi newEdgesMatrix(2, newEdges.size());
+            for(int e = 0; e < newEdges.size(); e++)
+                newEdgesMatrix.col(e) = newEdges[e];
+
+            grids_[g] = Grid(newNodeMatrix, newEdgesMatrix, newFixedNodes);
+            edgeLenCs_[g] = EdgeLenConstr(&grids_[g], newEdgeLengths);
         }
     }
 };
