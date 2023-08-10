@@ -231,7 +231,7 @@ public:
     int getNodeA2Indx() const { return nodeA2_; }
     int getNodeB1Indx() const { return nodeB1_; }
     int getNodeB2Indx() const { return nodeB2_; }
-    std::pair<int, int> getAlphaBeta() const { return std::make_pair(alpha_, beta_); }
+    std::pair<double, double> getAlphaBeta() const { return std::make_pair(alpha_, beta_); }
     double getDist() const { return dist_; }
 
     inline Eigen::Vector3d getMidpointA() const

@@ -17,8 +17,9 @@
 #define SIM_GRAV_SHIFT 1e-2
 #define SIM_TOL 1e-3
 #define SIM_MAX_ITERS 5000
-#define SIM_SCISSOR_EE_MIN_DIST 1e-3
-#define SIM_SCISSOR_CC_MIN_DIST 1e-1
+#define SIM_SCISSOR_EE_MIN_DIST 1e-2
+#define SIM_SCISSOR_CC_MIN_DIST 1e-16
+#define SIM_SCISSOR_CN_MIN_DIST 0.2
 
 
 struct Pick
@@ -77,10 +78,9 @@ private:
 
     bool playSim_;
     bool simCollision_;
+    bool simScissors_;
     int simIters_;
     std::vector<float> simDeltas_;
-
-    bool bla = false;
 
 
     virtual bool initApp()
@@ -187,6 +187,11 @@ private:
             simCollision_ = !simCollision_;
         if(ImGui::Button("Cut"))
             cut();
+        if(ImGui::Button("Add scissor constraints"))
+        {
+            int nAdded = addScissorC();
+            frmwrk::Debug::log("Added %i sciss constr", nAdded);
+        }
         ImGui::End();
 
         return true;
@@ -238,7 +243,7 @@ private:
         // Draw scissor constr
 
         glPointSize(10.0f);
-        glColor3ub(0x00, 0x00, 0xff);
+        glColor3ub(0xff, 0x00, 0xff);
         glBegin(GL_POINTS);
         for(const ScissorConstr& s : scissorCs_)
         {
@@ -339,33 +344,6 @@ private:
             nIters++;
         }
 
-        for(int gA = 0; gA < N_GRIDS-1; gA++)
-            for(int gB = gA+1; gB < N_GRIDS; gB++)
-                for(int eA = 0; eA < grids_[gA].getNEdges(); eA++)
-                    for(int eB = 0; eB < grids_[gB].getNEdges(); eB++)
-                    {
-                        ScissorConstr s = ScissorConstr(&grids_[gA], grids_[gA].edge(eA)[0], grids_[gA].edge(eA)[1],
-                                                        &grids_[gB], grids_[gB].edge(eB)[0], grids_[gB].edge(eB)[1]);
-
-                        if(s.getDist() > SIM_SCISSOR_EE_MIN_DIST)
-                            continue;
-
-                        Eigen::Vector3d midpoint = (s.getMidpointA() + s.getMidpointB()) / 2;
-                        bool acceptable = true;
-                        for(const ScissorConstr& otherS : scissorCs_)
-                        {
-                            Eigen::Vector3d otherMidpoint = (otherS.getMidpointA() + otherS.getMidpointB()) / 2;
-                            if((midpoint - otherMidpoint).norm() < SIM_SCISSOR_CC_MIN_DIST)
-                            {
-                                acceptable = false;
-                                break;
-                            }
-                        }
-
-                        if(acceptable)
-                            scissorCs_.push_back(s);
-                    }
-
         return nIters;
     }
 
@@ -458,6 +436,48 @@ private:
             grids_[g] = Grid(newNodeMatrix, newEdgesMatrix, newFixedNodes);
             edgeLenCs_[g] = EdgeLenConstr(&grids_[g], newEdgeLengths);
         }
+    }
+
+    int addScissorC()
+    {
+        int nAdded = 0;
+        for(int gA = 0; gA < N_GRIDS-1; gA++)
+            for(int gB = gA+1; gB < N_GRIDS; gB++)
+                for(int eA = 0; eA < grids_[gA].getNEdges(); eA++)
+                    for(int eB = 0; eB < grids_[gB].getNEdges(); eB++)
+                    {
+                        if(grids_[gA].isNodeFixed(grids_[gA].edge(eA)[0]) || grids_[gA].isNodeFixed(grids_[gA].edge(eA)[1]) ||
+                           grids_[gB].isNodeFixed(grids_[gB].edge(eB)[0]) || grids_[gB].isNodeFixed(grids_[gB].edge(eB)[1]))
+                           continue;
+                        
+                        ScissorConstr s = ScissorConstr(&grids_[gA], grids_[gA].edge(eA)[0], grids_[gA].edge(eA)[1],
+                                                        &grids_[gB], grids_[gB].edge(eB)[0], grids_[gB].edge(eB)[1]);
+
+                        if(std::abs(s.getAlphaBeta().first - 0.5)  > (0.5 - SIM_SCISSOR_CN_MIN_DIST) ||
+                           std::abs(s.getAlphaBeta().second - 0.5) > (0.5 - SIM_SCISSOR_CN_MIN_DIST) ||
+                           s.getDist() > SIM_SCISSOR_EE_MIN_DIST)
+                            continue;
+
+                        Eigen::Vector3d midpoint = (s.getMidpointA() + s.getMidpointB()) / 2;
+                        bool acceptable = true;
+                        for(const ScissorConstr& otherS : scissorCs_)
+                        {
+                            Eigen::Vector3d otherMidpoint = (otherS.getMidpointA() + otherS.getMidpointB()) / 2;
+                            if((midpoint - otherMidpoint).norm() < SIM_SCISSOR_CC_MIN_DIST)
+                            {
+                                acceptable = false;
+                                break;
+                            }
+                        }
+
+                        if(acceptable)
+                        {
+                            scissorCs_.push_back(s);
+                            nAdded++;
+                        }
+                    }
+        
+        return nAdded;
     }
 };
 
