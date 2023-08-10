@@ -15,7 +15,8 @@
 #define MAX_GRID_COLS 10
 
 #define SIM_GRAV_SHIFT 1e-2
-#define SIM_TOL 1e-3
+#define SIM_ABS_TOL 1e-4
+#define SIM_REL_TOL 1e-5
 #define SIM_MAX_ITERS 100000
 #define SIM_SCISSOR_EE_MIN_DIST 1e-2
 #define SIM_SCISSOR_CC_MIN_DIST 1e-1
@@ -38,11 +39,34 @@ struct Pick
 class MainApp : public frmwrk::App
 {
 public:
+/*     MainApp()
+        : App("Boundary actuation", Eigen::Vector2i{1000, 800}, true),
+          grids_{
+              Grid({0, 1, 0},   16, 16, {1, 0, 0}, {0, 0, 1},  0.2),
+              Grid({0, 1.1, 0}, 16, 16, {1, 0, 1}, {-1, 0, 1}, 0.2)
+          },
+          edgeLenCs_{
+              EdgeLenConstr(&grids_[0], 0.2),
+              EdgeLenConstr(&grids_[1], 0.2)
+          },
+          sphereCollCs_{
+              SphereCollConstr(&grids_[0], Eigen::Vector3d{0, -0.35, 0}, 1),
+              SphereCollConstr(&grids_[1], Eigen::Vector3d{0, -0.35, 0}, 1)
+          },
+          gridColors_{
+              {0x68, 0x2b, 0x68},
+              {0x2b, 0x2b, 0x78}
+          },
+          bgColorRender_{0xff, 0xff, 0xff},
+          bgColorPicking_{0x00, 0x00, 0xff},
+          playSim_(false),
+          simCollision_(false),
+          simIters_(0) */
     MainApp()
         : App("Boundary actuation", Eigen::Vector2i{1000, 800}, true),
           grids_{
-              Grid({0, 1, 0},   5, 5, {1, 0, 0}, {0, 0, 1},  0.2),
-              Grid({0, 0.5, 0}, 5, 5, {1, 0, 1}, {-1, 0, 1}, 0.2)
+              Grid({0, 1, 0},   10, 10, {1, 0, 0}, {0, 0, 1},  0.2),
+              Grid({0, 0.5, 0}, 10, 10, {1, 0, 1}, {-1, 0, 1}, 0.2)
           },
           edgeLenCs_{
               EdgeLenConstr(&grids_[0], 0.2),
@@ -94,7 +118,7 @@ private:
     {        
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
-        gluLookAt(3,3,3,   0,0,0,   0,1,0);
+        gluLookAt(3,0,0,   0,0,0,   0,1,0);
         trackball_.GetView();
         trackball_.Apply();
 
@@ -180,7 +204,7 @@ private:
 
         ImGui::Begin("Sim");
         ImGui::Text("N iters: %i", simIters_);
-        ImGui::PlotLines("Deltas", simDeltas_.data(), simDeltas_.size());
+        ImGui::PlotLines("Deltas", simDeltas_.data(), simDeltas_.size(), 0, nullptr, FLT_MAX, FLT_MAX, {300, 40});
         if(ImGui::Button("Play / Pause"))
             playSim_ = !playSim_;
         if(ImGui::Button("Enable / Disable collision"))
@@ -311,28 +335,27 @@ private:
         
         bool stop = false;
         int nIters = 0;
-        double totDelta;
+        double maxDelta, prevMaxDelta = std::numeric_limits<double>::infinity();
 
         simDeltas_.clear();
         while(!stop)
         {
-            stop = true;
-            totDelta = 0;
+            maxDelta = 0;
             
             for(const EdgeLenConstr& e : edgeLenCs_)
-                totDelta += e.resolve();
+                maxDelta = std::max(maxDelta, e.resolve());
 
             for(const ScissorConstr& s : scissorCs_)
-                totDelta += s.resolve();
+                maxDelta = std::max(maxDelta, s.resolve());
 
             if(simCollision_)
                 for(const SphereCollConstr& s : sphereCollCs_)
-                    totDelta += s.resolve();
+                    maxDelta = std::max(maxDelta, s.resolve());
 
-            simDeltas_.push_back(totDelta);
+            simDeltas_.push_back(maxDelta);
 
-            if(totDelta > SIM_TOL)
-                stop = false;
+            if(maxDelta < SIM_ABS_TOL)//|| (std::abs(prevMaxDelta - maxDelta) / maxDelta) < SIM_REL_TOL)
+                stop = true;
 
             if(nIters > SIM_MAX_ITERS)
             {
@@ -341,6 +364,7 @@ private:
                 playSim_ = false;
             }
 
+            prevMaxDelta = maxDelta;
             nIters++;
         }
 
