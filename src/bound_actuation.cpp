@@ -16,10 +16,10 @@
 
 #define SIM_GRAV_SHIFT 1e-2
 #define SIM_TOL 1e-3
-#define SIM_MAX_ITERS 5000
+#define SIM_MAX_ITERS 100000
 #define SIM_SCISSOR_EE_MIN_DIST 1e-2
 #define SIM_SCISSOR_CC_MIN_DIST 1e-16
-#define SIM_SCISSOR_CN_MIN_DIST 0.2
+#define SIM_SCISSOR_CN_MIN_DIST 1e-1
 
 
 struct Pick
@@ -446,17 +446,23 @@ private:
                 for(int eA = 0; eA < grids_[gA].getNEdges(); eA++)
                     for(int eB = 0; eB < grids_[gB].getNEdges(); eB++)
                     {
-                        if(grids_[gA].isNodeFixed(grids_[gA].edge(eA)[0]) || grids_[gA].isNodeFixed(grids_[gA].edge(eA)[1]) ||
-                           grids_[gB].isNodeFixed(grids_[gB].edge(eB)[0]) || grids_[gB].isNodeFixed(grids_[gB].edge(eB)[1]))
+                        int nodeA1Indx = grids_[gA].edge(eA)[0];
+                        int nodeA2Indx = grids_[gA].edge(eA)[1];
+                        int nodeB1Indx = grids_[gB].edge(eB)[0];
+                        int nodeB2Indx = grids_[gB].edge(eB)[1];
+
+                        if(grids_[gA].isNodeFixed(nodeA1Indx) || grids_[gA].isNodeFixed(nodeA2Indx) ||
+                           grids_[gB].isNodeFixed(nodeB1Indx) || grids_[gB].isNodeFixed(nodeB2Indx))
                            continue;
                         
-                        ScissorConstr s = ScissorConstr(&grids_[gA], grids_[gA].edge(eA)[0], grids_[gA].edge(eA)[1],
-                                                        &grids_[gB], grids_[gB].edge(eB)[0], grids_[gB].edge(eB)[1]);
+                        ScissorConstr s = ScissorConstr(&grids_[gA], nodeA1Indx, nodeA2Indx,
+                                                        &grids_[gB], nodeB1Indx, nodeB2Indx);
 
-                        if(std::abs(s.getAlphaBeta().first - 0.5)  > (0.5 - SIM_SCISSOR_CN_MIN_DIST) ||
-                           std::abs(s.getAlphaBeta().second - 0.5) > (0.5 - SIM_SCISSOR_CN_MIN_DIST) ||
-                           s.getDist() > SIM_SCISSOR_EE_MIN_DIST)
+                        if(s.getDist() > SIM_SCISSOR_EE_MIN_DIST ||
+                           std::abs(s.getAlpha() - 0.5) > (0.5 - SIM_SCISSOR_CN_MIN_DIST) ||
+                           std::abs(s.getBeta()  - 0.5) > (0.5 - SIM_SCISSOR_CN_MIN_DIST))
                             continue;
+
 
                         Eigen::Vector3d midpoint = (s.getMidpointA() + s.getMidpointB()) / 2;
                         bool acceptable = true;

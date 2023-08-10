@@ -2,10 +2,9 @@
 #define CONSTRAINTS_HPP_
 
 #include "grid.hpp"
+#include "param_distance3.h"
 
 #include <Eigen/Dense>
-
-#define SMALL_NUM 1e-12
 
 
 class HardConstraint
@@ -140,67 +139,22 @@ public:
           nodeB1_(nodeB1Indx),
           nodeB2_(nodeB2Indx)
     {
-        Eigen::Vector3d u = gridA->nodePos(nodeA2Indx) - gridA->nodePos(nodeA1Indx);
-        Eigen::Vector3d v = gridB->nodePos(nodeB2Indx) - gridB->nodePos(nodeB1Indx);
-        Eigen::Vector3d w = gridA->nodePos(nodeA1Indx) - gridB->nodePos(nodeB1Indx);
-        double a = u.dot(u);
-        double b = u.dot(v);
-        double c = v.dot(v);
-        double d = u.dot(w);
-        double e = v.dot(w);
-        double D = a*c - b*b;
-        double sc, sN, sD = D;
-        double tc, tN, tD = D;
+        vcg::Segment3d segA = vcg::Segment3d(
+            vcg::Point3d(gridA->nodePos(nodeA1Indx).data()),
+            vcg::Point3d(gridA->nodePos(nodeA2Indx).data())
+        );
 
-        if (D < SMALL_NUM) {
-            sN = 0.0;
-            sD = 1.0;
-            tN = e;
-            tD = c;
-        }
-        else {
-            sN = (b*e - c*d);
-            tN = (a*e - b*d);
-            if (sN < 0.0) {
-                sN = 0.0;
-                tN = e;
-                tD = c;
-            }
-            else if (sN > sD) {
-                sN = sD;
-                tN = e + b;
-                tD = c;
-            }
-        }
+        vcg::Segment3d segB = vcg::Segment3d(
+            vcg::Point3d(gridB->nodePos(nodeB1Indx).data()),
+            vcg::Point3d(gridB->nodePos(nodeB2Indx).data())
+        );
 
-        if (tN < 0.0) {
-            tN = 0.0;
- 
-            if (-d < 0.0)
-                sN = 0.0;
-            else if (-d > a)
-                sN = sD;
-            else {
-                sN = -d;
-                sD = a;
-            }
-        }
-        else if (tN > tD) {
-            tN = tD;
- 
-            if ((-d + b) < 0.0)
-                sN = 0;
-            else if ((-d + b) > a)
-                sN = sD;
-            else {
-                sN = (-d +  b);
-                sD = a;
-            }
-        }
- 
-        alpha_ = (abs(sN) < SMALL_NUM ? 0.0 : sN / sD);
-        beta_ = (abs(tN) < SMALL_NUM ? 0.0 : tN / tD);
-        dist_ = (w + (alpha_ * u) - (beta_ * v)).norm();
+        bool parallel;
+        vcg::Point3d midpointA, midpointB;
+        vcg::SegmentSegmentDistancePar(segA, segB, dist_, parallel, alpha_, beta_, midpointA, midpointB);
+
+        if(parallel)
+            frmwrk::Debug::logWarning("Found parallel edges while adding a new scissor constraint");
     }
 
     virtual double value() const
@@ -210,10 +164,7 @@ public:
 
     virtual double resolve() const
     {
-        Eigen::Vector3d midpointA = getMidpointA();
-        Eigen::Vector3d midpointB = getMidpointB();
-
-        Eigen::Vector3d shiftDir = midpointB - midpointA;
+        Eigen::Vector3d shiftDir = getMidpointB() - getMidpointA();
         double delta = (shiftDir.norm() - dist_);
         shiftDir.normalize();
 
@@ -231,17 +182,18 @@ public:
     int getNodeA2Indx() const { return nodeA2_; }
     int getNodeB1Indx() const { return nodeB1_; }
     int getNodeB2Indx() const { return nodeB2_; }
-    std::pair<double, double> getAlphaBeta() const { return std::make_pair(alpha_, beta_); }
     double getDist() const { return dist_; }
+    double getAlpha() const { return alpha_; }
+    double getBeta() const { return beta_; }
 
     inline Eigen::Vector3d getMidpointA() const
     {
-        return gridA_->nodePos(nodeA1_) + alpha_ * (gridA_->nodePos(nodeA2_) - gridA_->nodePos(nodeA1_));
+        return gridA_->nodePos(nodeA1_) * (1 - alpha_) + gridA_->nodePos(nodeA2_) * alpha_;
     }
 
     inline Eigen::Vector3d getMidpointB() const
     {
-        return gridB_->nodePos(nodeB1_) + beta_  * (gridB_->nodePos(nodeB2_) - gridB_->nodePos(nodeB1_));
+        return gridB_->nodePos(nodeB1_) * (1 - beta_) + gridB_->nodePos(nodeB2_) * beta_;
     }
 
 private:
