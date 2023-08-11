@@ -15,11 +15,12 @@
 #define MAX_GRID_COLS 10
 
 #define SIM_GRAV_SHIFT 1e-2
-#define SIM_TOL 1e-3
-#define SIM_MAX_ITERS 100000
+#define SIM_TOL_ABS 1e-10
+#define SIM_TOL_REL 1e-4
+#define SIM_MAX_ITERS 1000000
 #define SIM_SCISSOR_EE_MIN_DIST 1e-2
-#define SIM_SCISSOR_CC_MIN_DIST 1e-1
-#define SIM_SCISSOR_CN_MIN_DIST 1e-1
+#define SIM_SCISSOR_CC_MIN_DIST 0.1
+#define SIM_SCISSOR_CN_MIN_DIST 0.1
 
 
 struct Pick
@@ -41,7 +42,7 @@ public:
     MainApp()
         : App("Boundary actuation", Eigen::Vector2i{1000, 800}, true),
           grids_{
-              Grid({0, 1, 0},   5, 5, {1, 0, 0}, {0, 0, 1},  0.2),
+              Grid({0, 0.6, 0}, 5, 5, {1, 0, 0}, {0, 0, 1},  0.2),
               Grid({0, 0.5, 0}, 5, 5, {1, 0, 1}, {-1, 0, 1}, 0.2)
           },
           edgeLenCs_{
@@ -311,28 +312,27 @@ private:
         
         bool stop = false;
         int nIters = 0;
-        double totDelta;
+        double maxDelta, prevMaxDelta = std::numeric_limits<double>::infinity();
 
         simDeltas_.clear();
         while(!stop)
         {
-            stop = true;
-            totDelta = 0;
+            maxDelta = 0;
             
             for(const EdgeLenConstr& e : edgeLenCs_)
-                totDelta += e.resolve();
+                maxDelta = std::max(maxDelta, e.resolve());
 
             for(const ScissorConstr& s : scissorCs_)
-                totDelta += s.resolve();
+                maxDelta = std::max(maxDelta, s.resolve());
 
             if(simCollision_)
                 for(const SphereCollConstr& s : sphereCollCs_)
-                    totDelta += s.resolve();
+                    maxDelta = std::max(maxDelta, s.resolve());
 
-            simDeltas_.push_back(totDelta);
+            simDeltas_.push_back(maxDelta);
 
-            if(totDelta > SIM_TOL)
-                stop = false;
+            if(maxDelta < SIM_TOL_ABS || std::abs(prevMaxDelta - maxDelta) / maxDelta < SIM_TOL_REL)
+                stop = true;
 
             if(nIters > SIM_MAX_ITERS)
             {
@@ -341,6 +341,7 @@ private:
                 playSim_ = false;
             }
 
+            prevMaxDelta = maxDelta;
             nIters++;
         }
 

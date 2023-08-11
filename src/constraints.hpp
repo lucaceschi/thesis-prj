@@ -2,7 +2,7 @@
 #define CONSTRAINTS_HPP_
 
 #include "grid.hpp"
-#include "param_distance3.h"
+#include "param_distance3.hpp"
 
 #include <Eigen/Dense>
 
@@ -39,7 +39,7 @@ public:
 
     virtual double resolve() const
     {
-        double totDelta = 0.0;
+        double maxDelta = 0.0;
         
         for(int e = 0; e < grid_->getNEdges(); e++)
         {
@@ -54,14 +54,15 @@ public:
                 grid_->nodePos(grid_->edge(e)[0]) += delta * v;
             else
             {
-                grid_->nodePos(grid_->edge(e)[0]) += delta/2.0 * v;
-                grid_->nodePos(grid_->edge(e)[1]) -= delta/2.0 * v;
+                delta /= 2;
+                grid_->nodePos(grid_->edge(e)[0]) += delta * v;
+                grid_->nodePos(grid_->edge(e)[1]) -= delta * v;
             }
 
-            totDelta += std::abs(delta);
+            maxDelta = std::max(maxDelta, std::abs(delta));
         }
 
-        return totDelta;
+        return maxDelta;
     }
 
     double getLength(int e) const { return lens_[e]; }
@@ -97,7 +98,7 @@ public:
 
     virtual double resolve() const
     {
-        double currDist, currDelta, totValue = 0;
+        double currDist, currDelta, maxDelta = 0;
         
         for(int n = 0; n < grid_->getNNodes(); n++)
         {
@@ -108,7 +109,7 @@ public:
             currDelta = radius_ - currDist; 
             if(currDelta > 0)
             {
-                totValue += currDelta;
+                maxDelta = std::max(maxDelta, currDelta);
                 
                 if((grid_->nodePos(n) - centerPos_).isZero())
                     grid_->nodePos(n) += Eigen::Vector3d{0, radius_, 0};
@@ -117,7 +118,7 @@ public:
             }
         }
 
-        return totValue;
+        return maxDelta;
     }
 
     Eigen::Vector3d centerPos_;
@@ -173,7 +174,7 @@ public:
         gridB_->nodePos(nodeB1_) -= delta/2 * shiftDir;
         gridB_->nodePos(nodeB2_) -= delta/2 * shiftDir;
 
-        return delta * 2;
+        return std::abs(delta) / 2;
     }
 
     Grid* getGridA() const { return gridA_; }
