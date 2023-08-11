@@ -54,13 +54,14 @@ public:
               SphereCollConstr(&grids_[1], Eigen::Vector3d{0, 0, 0}, 0.5)
           },
           gridColors_{
-              {0x68, 0x2b, 0x68},
-              {0x2b, 0x2b, 0x78}
+              {0x60, 0x60, 0xde},
+              {0x60, 0xbc, 0xc0}
           },
           bgColorRender_{0xff, 0xff, 0xff},
           bgColorPicking_{0x00, 0x00, 0xff},
           playSim_(false),
-          simCollision_(false),
+          simCollision_(true),
+          simScissors_(true),
           simIters_(0)
     {}
 
@@ -95,7 +96,7 @@ private:
     {        
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
-        gluLookAt(3,3,3,   0,0,0,   0,1,0);
+        gluLookAt(4,0,0,   0,0,0,   0,1,0);
         trackball_.GetView();
         trackball_.Apply();
 
@@ -109,7 +110,7 @@ private:
 
         if(!ImGui::GetIO().WantCaptureMouse)
         {
-            if(input_.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT))
+            if(input_.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT) || input_.isMouseButtonPressed(GLFW_MOUSE_BUTTON_RIGHT))
             {
                 GLubyte pickedColor[3];
                 GLfloat pickedDepth;
@@ -122,15 +123,22 @@ private:
                     glReadPixels(curPos(0), curPos(1), 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT, &pickedDepth);
                     pickedNodeIdx = color2node(pickedColor[0], pickedColor[1], pickedColor[2]);
 
-                    if(pickedNodeIdx == -1)
-                        trackball_.MouseDown((int)curPos(0), (int)curPos(1), vcg::Trackball::BUTTON_LEFT);
-                    else
+                    if(pickedNodeIdx != -1 && input_.isMouseButtonPressed(GLFW_MOUSE_BUTTON_RIGHT))
+                    {
+                        vcg::Point3d pickedNodePos = vcg::Point3d(grids_[g].nodePos(pickedNodeIdx).data());
+                        trackball_.SetPosition(pickedNodePos);
+                        break;
+                    }
+                    else if(pickedNodeIdx != -1 && input_.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT))
                     {
                         pick_ = Pick(g, pickedNodeIdx, pickedDepth);
                         grids_[g].fixedNodes.insert(pickedNodeIdx);
                         break;
                     }
                 }
+
+                if(pickedNodeIdx == -1)
+                    trackball_.MouseDown((int)curPos(0), (int)curPos(1), vcg::Trackball::BUTTON_LEFT);
             }
 
             if(input_.isMouseButtonHeld(GLFW_MOUSE_BUTTON_LEFT))
@@ -171,6 +179,25 @@ private:
                 pick_ = Pick();
                 trackball_.MouseUp((int)curPos(0), (int)curPos(1), vcg::Trackball::BUTTON_LEFT);
             }
+
+            if(input_.getMouseScrollOffset() != 0)
+                trackball_.MouseWheel(input_.getMouseScrollOffset());
+        }
+
+        if(!ImGui::GetIO().WantCaptureKeyboard)
+        {
+            if(input_.isKeyPressed(GLFW_KEY_LEFT_SHIFT))
+                trackball_.ButtonDown(vcg::Trackball::KEY_SHIFT);
+            if(input_.isKeyReleased(GLFW_KEY_LEFT_SHIFT))
+                trackball_.ButtonUp(vcg::Trackball::KEY_SHIFT);
+            if(input_.isKeyPressed(GLFW_KEY_LEFT_CONTROL))
+                trackball_.ButtonDown(vcg::Trackball::KEY_CTRL);
+            if (input_.isKeyReleased(GLFW_KEY_LEFT_CONTROL))
+                trackball_.ButtonUp(vcg::Trackball::KEY_CTRL);
+            if (input_.isKeyPressed(GLFW_KEY_LEFT_ALT))
+                trackball_.ButtonDown(vcg::Trackball::KEY_ALT);
+            if (input_.isKeyReleased(GLFW_KEY_LEFT_ALT))
+                trackball_.ButtonUp(vcg::Trackball::KEY_ALT);
         }
 
         if(playSim_)
@@ -181,14 +208,13 @@ private:
 
         ImGui::Begin("Sim");
         ImGui::Text("N iters: %i", simIters_);
-        ImGui::PlotLines("Deltas", simDeltas_.data(), simDeltas_.size());
-        if(ImGui::Button("Play / Pause"))
-            playSim_ = !playSim_;
-        if(ImGui::Button("Enable / Disable collision"))
-            simCollision_ = !simCollision_;
+        ImGui::PlotLines("Deltas", simDeltas_.data(), simDeltas_.size(), 0, nullptr, FLT_MAX, FLT_MAX, {200, 30});
+        ImGui::Checkbox("Play sim", &playSim_);
+        ImGui::Checkbox("Collisions", &simCollision_);
+        ImGui::Checkbox("Scissors", &simScissors_);
         if(ImGui::Button("Cut"))
             cut();
-        if(ImGui::Button("Add scissor constraints"))
+        if(ImGui::Button("Add scissors"))
         {
             int nAdded = addScissorC();
             frmwrk::Debug::log("Added %i sciss constr", nAdded);
@@ -322,8 +348,9 @@ private:
             for(const EdgeLenConstr& e : edgeLenCs_)
                 maxDelta = std::max(maxDelta, e.resolve());
 
-            for(const ScissorConstr& s : scissorCs_)
-                maxDelta = std::max(maxDelta, s.resolve());
+            if(simScissors_)
+                for(const ScissorConstr& s : scissorCs_)
+                    maxDelta = std::max(maxDelta, s.resolve());
 
             if(simCollision_)
                 for(const SphereCollConstr& s : sphereCollCs_)
