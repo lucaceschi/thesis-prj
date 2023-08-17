@@ -10,7 +10,6 @@
 class HardConstraint
 {
 public:
-    virtual double value() const = 0;
     virtual double resolve() const = 0;
 };
 
@@ -27,15 +26,6 @@ public:
         : grid_(grid),
           lens_(lengths)
     {}
-
-    virtual double value() const
-    {
-        double v = 0.0;
-        for(int e = 0; e < grid_->getNEdges(); e++)
-            v += (grid_->nodePos(grid_->edge(e)[0]) - grid_->nodePos(grid_->edge(e)[1])).norm();
-
-        return v;
-    }
 
     virtual double resolve() const
     {
@@ -81,20 +71,6 @@ public:
           centerPos_(centerPos),
           radius_(radius)
     {}
-
-    virtual double value() const
-    {
-        double currDelta, totValue = 0;
-        
-        for(int n = 0; n < grid_->getNNodes(); n++)
-        {
-            currDelta = radius_ - (grid_->nodePos(n) - centerPos_).squaredNorm(); 
-            if(currDelta > 0)
-                totValue += currDelta;
-        }
-
-        return totValue;
-    }
 
     virtual double resolve() const
     {
@@ -156,11 +132,6 @@ public:
 
         if(parallel)
             frmwrk::Debug::logWarning("Found parallel edges while adding a new scissor constraint");
-    }
-
-    virtual double value() const
-    {
-        return (getMidpointA() - getMidpointB()).norm();
     }
 
     virtual double resolve() const
