@@ -60,6 +60,7 @@ public:
           bgColorRender_{0xff, 0xff, 0xff},
           bgColorPicking_{0x00, 0x00, 0xff},
           playSim_(false),
+          singleStepSim_(false),
           gravSim_(true),
           edgeSim_(true),
           simCollision_(true),
@@ -81,6 +82,7 @@ private:
     vcg::Trackball trackball_;
 
     bool playSim_;
+    bool singleStepSim_;
     bool gravSim_;
     bool edgeSim_;
     bool simCollision_;
@@ -204,16 +206,15 @@ private:
                 trackball_.ButtonUp(vcg::Trackball::KEY_ALT);
         }
 
-        if(playSim_)
-            simIters_ = simGrids(deltaTime);
-
-        for(int g = 0; g < N_GRIDS; g++)
-            drawGridRender(g, (g == 0));
-
         ImGui::Begin("Sim");
         ImGui::Text("N iters: %i", simIters_);
         ImGui::PlotLines("Deltas", simDeltas_.data(), simDeltas_.size(), 0, nullptr, FLT_MAX, FLT_MAX, {200, 30});
         ImGui::Checkbox("Play sim", &playSim_);
+        if(ImGui::Button("Single step"))
+            singleStepSim_ = true;
+        ImGui::End();
+
+        ImGui::Begin("Constraints");
         ImGui::Checkbox("Gravity", &gravSim_);
         ImGui::Checkbox("Edge Lenght", &edgeSim_);
         ImGui::Checkbox("Collisions", &simCollision_);
@@ -226,6 +227,15 @@ private:
             frmwrk::Debug::log("Added %i sciss constr", nAdded);
         }
         ImGui::End();
+
+        if(playSim_ || singleStepSim_)
+            simIters_ = simGrids(deltaTime);
+
+        if(singleStepSim_)
+            singleStepSim_ = false;
+
+        for(int g = 0; g < N_GRIDS; g++)
+            drawGridRender(g, (g == 0));
 
         return true;
     }
