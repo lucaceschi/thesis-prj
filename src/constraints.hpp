@@ -107,28 +107,30 @@ private:
 class ScissorConstr : public HardConstraint
 {
 public:
-    ScissorConstr(Grid* gridA, int nodeA1Indx, int nodeA2Indx,
-                  Grid* gridB, int nodeB1Indx, int nodeB2Indx)
+    ScissorConstr(Grid* gridA, int nodeA0Indx, int nodeA1Indx,
+                  Grid* gridB, int nodeB0Indx, int nodeB1Indx)
         : gridA_(gridA),
-          nodeA1_(nodeA1Indx),
-          nodeA2_(nodeA2Indx),
+          nodeA0Indx_(nodeA0Indx),
+          nodeA1Indx_(nodeA1Indx),
           gridB_(gridB),
-          nodeB1_(nodeB1Indx),
-          nodeB2_(nodeB2Indx)
+          nodeB0Indx_(nodeB0Indx),
+          nodeB1Indx_(nodeB1Indx)
     {
         vcg::Segment3d segA = vcg::Segment3d(
-            vcg::Point3d(gridA->nodePos(nodeA1Indx).data()),
-            vcg::Point3d(gridA->nodePos(nodeA2Indx).data())
+            vcg::Point3d(gridA->nodePos(nodeA0Indx).data()),
+            vcg::Point3d(gridA->nodePos(nodeA1Indx).data())
         );
 
         vcg::Segment3d segB = vcg::Segment3d(
-            vcg::Point3d(gridB->nodePos(nodeB1Indx).data()),
-            vcg::Point3d(gridB->nodePos(nodeB2Indx).data())
+            vcg::Point3d(gridB->nodePos(nodeB0Indx).data()),
+            vcg::Point3d(gridB->nodePos(nodeB1Indx).data())
         );
 
         bool parallel;
         vcg::Point3d midpointA, midpointB;
         vcg::SegmentSegmentDistancePar(segA, segB, dist_, parallel, alpha_, beta_, midpointA, midpointB);
+        omegaA_ = 1.0 / (std::pow(alpha_, 2) + std::pow(1 - alpha_, 2));
+        omegaB_ = 1.0 / (std::pow(beta_,  2) + std::pow(1 - beta_,  2));
 
         if(parallel)
             frmwrk::Debug::logWarning("Found parallel edges while adding a new scissor constraint");
@@ -138,43 +140,49 @@ public:
     {
         Eigen::Vector3d shiftDir = getMidpointB() - getMidpointA();
         double delta = (shiftDir.norm() - dist_);
+        double deltaA = delta * omegaA_ / (omegaA_ + omegaB_);
+        double deltaB = delta * omegaB_ / (omegaA_ + omegaB_);
+        double deltaA0 = deltaA * (1 - alpha_) * omegaA_;
+        double deltaA1 = deltaA * (alpha_)     * omegaA_;
+        double deltaB0 = deltaB * (1 - beta_)  * omegaB_;
+        double deltaB1 = deltaB * (beta_)      * omegaB_;
         shiftDir.normalize();
 
-        gridA_->nodePos(nodeA1_) += delta/2 * shiftDir;
-        gridA_->nodePos(nodeA2_) += delta/2 * shiftDir;
-        gridB_->nodePos(nodeB1_) -= delta/2 * shiftDir;
-        gridB_->nodePos(nodeB2_) -= delta/2 * shiftDir;
+        gridA_->nodePos(nodeA0Indx_) += deltaA0 * shiftDir;
+        gridA_->nodePos(nodeA1Indx_) += deltaA1 * shiftDir;
+        gridB_->nodePos(nodeB0Indx_) -= deltaB0 * shiftDir;
+        gridB_->nodePos(nodeB1Indx_) -= deltaB1 * shiftDir;
 
-        return std::abs(delta) / 2;
+        return std::max({std::abs(deltaA0), std::abs(deltaA1), std::abs(deltaB0), std::abs(deltaB1)});
     }
 
     Grid* getGridA() const { return gridA_; }
     Grid* getGridB() const { return gridB_; }
-    int getNodeA1Indx() const { return nodeA1_; }
-    int getNodeA2Indx() const { return nodeA2_; }
-    int getNodeB1Indx() const { return nodeB1_; }
-    int getNodeB2Indx() const { return nodeB2_; }
+    int getNodeA0Indx() const { return nodeA0Indx_; }
+    int getNodeA1Indx() const { return nodeA1Indx_; }
+    int getNodeB0Indx() const { return nodeB0Indx_; }
+    int getNodeB1Indx() const { return nodeB1Indx_; }
     double getDist() const { return dist_; }
     double getAlpha() const { return alpha_; }
     double getBeta() const { return beta_; }
 
     inline Eigen::Vector3d getMidpointA() const
     {
-        return gridA_->nodePos(nodeA1_) * (1 - alpha_) + gridA_->nodePos(nodeA2_) * alpha_;
+        return gridA_->nodePos(nodeA0Indx_) * (1 - alpha_) + gridA_->nodePos(nodeA1Indx_) * alpha_;
     }
 
     inline Eigen::Vector3d getMidpointB() const
     {
-        return gridB_->nodePos(nodeB1_) * (1 - beta_) + gridB_->nodePos(nodeB2_) * beta_;
+        return gridB_->nodePos(nodeB0Indx_) * (1 - beta_) + gridB_->nodePos(nodeB1Indx_) * beta_;
     }
 
 private:
     Grid* gridA_;
-    int nodeA1_, nodeA2_;
-    double alpha_;
+    int nodeA0Indx_, nodeA1Indx_;
+    double alpha_, omegaA_;
     Grid* gridB_;
-    int nodeB1_, nodeB2_;
-    double beta_;
+    int nodeB0Indx_, nodeB1Indx_;
+    double beta_, omegaB_;
     double dist_;
 };
 

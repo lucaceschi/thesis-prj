@@ -14,12 +14,12 @@
 #define N_GRIDS 2
 #define MAX_GRID_COLS 10
 
-#define SIM_GRAV_SHIFT 1e-2
+#define SIM_GRAV_SHIFT 1e-3
 #define SIM_TOL_ABS 1e-10
-#define SIM_TOL_REL 1e-4
+#define SIM_TOL_REL 1e-5
 #define SIM_MAX_ITERS 1000000
 #define SIM_SCISSOR_EE_MIN_DIST 1e-2
-#define SIM_SCISSOR_CC_MIN_DIST 0.1
+#define SIM_SCISSOR_CC_MIN_DIST 1e-2
 #define SIM_SCISSOR_CN_MIN_DIST 0.1
 
 
@@ -42,12 +42,12 @@ public:
     MainApp()
         : App("Boundary actuation", Eigen::Vector2i{1000, 800}, true),
           grids_{
-              Grid({0, 0.6, 0}, 5, 5, {1, 0, 0}, {0, 0, 1},  0.2),
-              Grid({0, 0.5, 0}, 5, 5, {1, 0, 1}, {-1, 0, 1}, 0.2)
+              Grid({0, 0.6, 0}, 5, 5, {1, 0, 0}, {0, 0, 1},  0.1),
+              Grid({0, 0.5, 0}, 5, 5, {1, 0, 1}, {-1, 0, 1}, 0.1)
           },
           edgeLenCs_{
-              EdgeLenConstr(&grids_[0], 0.2),
-              EdgeLenConstr(&grids_[1], 0.2)
+              EdgeLenConstr(&grids_[0], 0.1),
+              EdgeLenConstr(&grids_[1], 0.1)
           },
           sphereCollCs_{
               SphereCollConstr(&grids_[0], Eigen::Vector3d{0, 0, 0}, 0.5),
@@ -60,6 +60,8 @@ public:
           bgColorRender_{0xff, 0xff, 0xff},
           bgColorPicking_{0x00, 0x00, 0xff},
           playSim_(false),
+          gravSim_(true),
+          edgeSim_(true),
           simCollision_(true),
           simScissors_(true),
           simIters_(0)
@@ -79,6 +81,8 @@ private:
     vcg::Trackball trackball_;
 
     bool playSim_;
+    bool gravSim_;
+    bool edgeSim_;
     bool simCollision_;
     bool simScissors_;
     int simIters_;
@@ -210,6 +214,8 @@ private:
         ImGui::Text("N iters: %i", simIters_);
         ImGui::PlotLines("Deltas", simDeltas_.data(), simDeltas_.size(), 0, nullptr, FLT_MAX, FLT_MAX, {200, 30});
         ImGui::Checkbox("Play sim", &playSim_);
+        ImGui::Checkbox("Gravity", &gravSim_);
+        ImGui::Checkbox("Edge Lenght", &edgeSim_);
         ImGui::Checkbox("Collisions", &simCollision_);
         ImGui::Checkbox("Scissors", &simScissors_);
         if(ImGui::Button("Cut"))
@@ -327,14 +333,15 @@ private:
 
     int simGrids(double deltaTime)
     {
-        for(int g = 0; g < N_GRIDS; g++)
-            for(int n = 0; n < grids_[g].getNNodes(); n++)
-            {
-                if(grids_[g].isNodeFixed(n))
-                    continue;
+        if(gravSim_)
+            for(int g = 0; g < N_GRIDS; g++)
+                for(int n = 0; n < grids_[g].getNNodes(); n++)
+                {
+                    if(grids_[g].isNodeFixed(n))
+                        continue;
 
-                grids_[g].nodePos(n) -= Eigen::Vector3d{0, SIM_GRAV_SHIFT, 0};
-            }
+                    grids_[g].nodePos(n) -= Eigen::Vector3d{0, SIM_GRAV_SHIFT, 0};
+                }
         
         bool stop = false;
         int nIters = 0;
@@ -345,8 +352,9 @@ private:
         {
             maxDelta = 0;
             
-            for(const EdgeLenConstr& e : edgeLenCs_)
-                maxDelta = std::max(maxDelta, e.resolve());
+            if(edgeSim_)
+                for(const EdgeLenConstr& e : edgeLenCs_)
+                    maxDelta = std::max(maxDelta, e.resolve());
 
             if(simScissors_)
                 for(const ScissorConstr& s : scissorCs_)
