@@ -60,7 +60,7 @@ public:
           bgColorRender_{0xff, 0xff, 0xff},
           bgColorPicking_{0x00, 0x00, 0xff},
           playSim_(false),
-          singleStepSim_(false),
+          doNIterSim_(1),
           gravSim_(true),
           edgeSim_(true),
           simCollision_(true),
@@ -82,7 +82,7 @@ private:
     vcg::Trackball trackball_;
 
     bool playSim_;
-    bool singleStepSim_;
+    int doNIterSim_;
     bool gravSim_;
     bool edgeSim_;
     bool simCollision_;
@@ -211,7 +211,10 @@ private:
         ImGui::PlotLines("Deltas", simDeltas_.data(), simDeltas_.size(), 0, nullptr, FLT_MAX, FLT_MAX, {200, 30});
         ImGui::Checkbox("Play sim", &playSim_);
         if(ImGui::Button("Single step"))
-            singleStepSim_ = true;
+            simIters_ = simGrids();
+        if(ImGui::Button("Do N iterations"))
+            simIters_ = simGrids(doNIterSim_);
+        ImGui::DragInt("N", &doNIterSim_, 1, 1, 100);
         ImGui::End();
 
         ImGui::Begin("Constraints");
@@ -228,11 +231,8 @@ private:
         }
         ImGui::End();
 
-        if(playSim_ || singleStepSim_)
-            simIters_ = simGrids(deltaTime);
-
-        if(singleStepSim_)
-            singleStepSim_ = false;
+        if(playSim_)
+            simIters_ = simGrids();
 
         for(int g = 0; g < N_GRIDS; g++)
             drawGridRender(g, (g == 0));
@@ -341,7 +341,7 @@ private:
     }
 
 
-    int simGrids(double deltaTime)
+    int simGrids(int doNIters = std::numeric_limits<int>::max())
     {
         if(gravSim_)
             for(int g = 0; g < N_GRIDS; g++)
@@ -388,6 +388,9 @@ private:
 
             prevMaxDelta = maxDelta;
             nIters++;
+
+            if(nIters >= doNIters)
+                break;
         }
 
         return nIters;
