@@ -290,10 +290,10 @@ private:
         glBegin(GL_POINTS);
         for(const ScissorConstr& s : scissorCs_)
         {
-            Eigen::Vector3d midpointA = s.getMidpointA();
-            Eigen::Vector3d midpointB = s.getMidpointB();
-            glVertex3d(midpointA(0), midpointA(1), midpointA(2));
-            glVertex3d(midpointB(0), midpointB(1), midpointB(2));
+            Eigen::Vector3d cpA = s.getCrossPointA();
+            Eigen::Vector3d cpB = s.getCrossPointB();
+            glVertex3d(cpA(0), cpA(1), cpA(2));
+            glVertex3d(cpB(0), cpB(1), cpB(2));
         }
         glEnd();
 
@@ -495,17 +495,17 @@ private:
                 for(int eA = 0; eA < grids_[gA].getNEdges(); eA++)
                     for(int eB = 0; eB < grids_[gB].getNEdges(); eB++)
                     {
-                        int nodeA1Indx = grids_[gA].edge(eA)[0];
-                        int nodeA2Indx = grids_[gA].edge(eA)[1];
-                        int nodeB1Indx = grids_[gB].edge(eB)[0];
-                        int nodeB2Indx = grids_[gB].edge(eB)[1];
+                        int nodeA0Indx = grids_[gA].edge(eA)[0];
+                        int nodeA1Indx = grids_[gA].edge(eA)[1];
+                        int nodeB0Indx = grids_[gB].edge(eB)[0];
+                        int nodeB1Indx = grids_[gB].edge(eB)[1];
 
-                        if(grids_[gA].isNodeFixed(nodeA1Indx) || grids_[gA].isNodeFixed(nodeA2Indx) ||
-                           grids_[gB].isNodeFixed(nodeB1Indx) || grids_[gB].isNodeFixed(nodeB2Indx))
+                        if(grids_[gA].isNodeFixed(nodeA0Indx) || grids_[gA].isNodeFixed(nodeA1Indx) ||
+                           grids_[gB].isNodeFixed(nodeB0Indx) || grids_[gB].isNodeFixed(nodeB1Indx))
                            continue;
                         
-                        ScissorConstr s = ScissorConstr(&grids_[gA], nodeA1Indx, nodeA2Indx,
-                                                        &grids_[gB], nodeB1Indx, nodeB2Indx);
+                        ScissorConstr s = ScissorConstr(&grids_[gA], nodeA0Indx, nodeA1Indx,
+                                                        &grids_[gB], nodeB0Indx, nodeB1Indx);
 
                         if(s.getDist() > SIM_SCISSOR_EE_MIN_DIST ||
                            std::abs(s.getAlpha() - 0.5) > (0.5 - SIM_SCISSOR_CN_MIN_DIST) ||
@@ -513,12 +513,12 @@ private:
                             continue;
 
 
-                        Eigen::Vector3d midpoint = (s.getMidpointA() + s.getMidpointB()) / 2;
+                        Eigen::Vector3d crossPoint = (s.getCrossPointA() + s.getCrossPointB()) / 2;
                         bool acceptable = true;
                         for(const ScissorConstr& otherS : scissorCs_)
                         {
-                            Eigen::Vector3d otherMidpoint = (otherS.getMidpointA() + otherS.getMidpointB()) / 2;
-                            if((midpoint - otherMidpoint).norm() < SIM_SCISSOR_CC_MIN_DIST)
+                            Eigen::Vector3d otherCrossPoint = (otherS.getCrossPointA() + otherS.getCrossPointB()) / 2;
+                            if((crossPoint - otherCrossPoint).norm() < SIM_SCISSOR_CC_MIN_DIST)
                             {
                                 acceptable = false;
                                 break;

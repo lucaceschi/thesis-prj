@@ -138,7 +138,7 @@ public:
 
     virtual double resolve() const
     {
-        Eigen::Vector3d shiftDir = getMidpointB() - getMidpointA();
+        Eigen::Vector3d shiftDir = getCrossPointB() - getCrossPointA();
         double delta = (shiftDir.norm() - dist_);
         double deltaA = delta * omegaA_ / (omegaA_ + omegaB_);
         double deltaB = delta * omegaB_ / (omegaA_ + omegaB_);
@@ -153,7 +153,7 @@ public:
         gridB_->nodePos(nodeB0Indx_) -= deltaB0 * shiftDir;
         gridB_->nodePos(nodeB1Indx_) -= deltaB1 * shiftDir;
 
-        return std::max({std::abs(deltaA0), std::abs(deltaA1), std::abs(deltaB0), std::abs(deltaB1)});
+        return std::max({deltaA0, deltaA1, deltaB0, deltaB1});
     }
 
     Grid* getGridA() const { return gridA_; }
@@ -166,12 +166,12 @@ public:
     double getAlpha() const { return alpha_; }
     double getBeta() const { return beta_; }
 
-    inline Eigen::Vector3d getMidpointA() const
+    inline Eigen::Vector3d getCrossPointA() const
     {
         return gridA_->nodePos(nodeA0Indx_) * (1 - alpha_) + gridA_->nodePos(nodeA1Indx_) * alpha_;
     }
 
-    inline Eigen::Vector3d getMidpointB() const
+    inline Eigen::Vector3d getCrossPointB() const
     {
         return gridB_->nodePos(nodeB0Indx_) * (1 - beta_) + gridB_->nodePos(nodeB1Indx_) * beta_;
     }
