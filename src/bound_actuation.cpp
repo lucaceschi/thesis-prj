@@ -65,7 +65,11 @@ public:
           edgeSim_(true),
           simCollision_(true),
           simScissors_(true),
-          simIters_(0)
+          simIters_(0),
+          prevNodePos_{
+              Eigen::Matrix3Xd(grids_[0].pos),
+              Eigen::Matrix3Xd(grids_[1].pos)
+          }
     {}
 
 private:
@@ -88,7 +92,8 @@ private:
     bool simCollision_;
     bool simScissors_;
     int simIters_;
-    std::vector<float> simDeltas_;
+    std::vector<float> simSserrs_;
+    Eigen::Matrix3Xd prevNodePos_[N_GRIDS];
 
 
     virtual bool initApp()
@@ -208,7 +213,7 @@ private:
 
         ImGui::Begin("Sim");
         ImGui::Text("N iters: %i", simIters_);
-        ImGui::PlotLines("Deltas", simDeltas_.data(), simDeltas_.size(), 0, nullptr, FLT_MAX, FLT_MAX, {200, 30});
+        ImGui::PlotLines("Deltas", simSserrs_.data(), simSserrs_.size(), 0, nullptr, FLT_MAX, FLT_MAX, {200, 30});
         ImGui::Checkbox("Play sim", &playSim_);
         if(ImGui::Button("Single step"))
             simIters_ = simGrids();
@@ -355,28 +360,37 @@ private:
         
         bool stop = false;
         int nIters = 0;
-        double maxDelta, prevMaxDelta = std::numeric_limits<double>::infinity();
+        double prevSse = std::numeric_limits<double>::infinity();
+        double sse;
 
-        simDeltas_.clear();
+        simSserrs_.clear();
         while(!stop)
         {
-            maxDelta = 0;
+            sse = 0;
+            for(int g = 0; g < N_GRIDS; g++)
+                prevNodePos_[g] = Eigen::Matrix3Xd(grids_[g].pos);
             
             if(edgeSim_)
                 for(const EdgeLenConstr& e : edgeLenCs_)
-                    maxDelta = std::max(maxDelta, e.resolve());
+                    e.resolve();
 
             if(simScissors_)
                 for(const ScissorConstr& s : scissorCs_)
-                    maxDelta = std::max(maxDelta, s.resolve());
+                    s.resolve();
 
             if(simCollision_)
                 for(const SphereCollConstr& s : sphereCollCs_)
-                    maxDelta = std::max(maxDelta, s.resolve());
+                    s.resolve();
 
-            simDeltas_.push_back(maxDelta);
+            for(int g = 0; g < N_GRIDS; g++)
+            {
+                prevNodePos_[g] -= grids_[g].pos;
+                for(int n = 0; n < grids_[g].getNNodes(); n++)
+                    sse += prevNodePos_[g].col(n).squaredNorm();
+            }
+            simSserrs_.push_back(sse);
 
-            if(maxDelta < SIM_TOL_ABS || std::abs(prevMaxDelta - maxDelta) / maxDelta < SIM_TOL_REL)
+            if(sse < SIM_TOL_ABS || (prevSse - sse) / sse < SIM_TOL_REL)
                 stop = true;
 
             if(nIters > SIM_MAX_ITERS)
@@ -386,7 +400,7 @@ private:
                 playSim_ = false;
             }
 
-            prevMaxDelta = maxDelta;
+            prevSse = sse;
             nIters++;
 
             if(nIters >= doNIters)
