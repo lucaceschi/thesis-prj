@@ -105,15 +105,15 @@ private:
 
     virtual bool mainLoop(double deltaTime)
     {        
-        glMatrixMode(GL_MODELVIEW);
-        glLoadIdentity();
-        gluLookAt(4,0,0,   0,0,0,   0,1,0);
-        trackball_.GetView();
-        trackball_.Apply();
-
         glMatrixMode(GL_PROJECTION);
         glLoadIdentity();
         gluPerspective(40, (GLdouble)getFramebufferSize()(0)/getFramebufferSize()(1), 0.1, 100);
+        
+        glMatrixMode(GL_MODELVIEW);
+        glLoadIdentity();
+        gluLookAt(0,0,4,   0,0,0,   0,1,0);
+        trackball_.GetView();
+        trackball_.Apply();
 
         Eigen::Vector2d curPos = input_.getCursorPos();
         curPos(0) = curPos(0) * getWindowContentScale()(0);
@@ -136,8 +136,9 @@ private:
 
                     if(pickedNodeIdx != -1 && input_.isMouseButtonPressed(GLFW_MOUSE_BUTTON_RIGHT))
                     {
-                        vcg::Point3d pickedNodePos = vcg::Point3d(grids_[g].nodePos(pickedNodeIdx).data());
-                        trackball_.SetPosition(pickedNodePos);
+                        vcg::Point3f pickedNodePos;
+                        pickedNodePos.FromEigenVector(grids_[g].nodePos(pickedNodeIdx));
+                        trackball_.Translate(vcg::Point3f(1, 0, 0));
                         break;
                     }
                     else if(pickedNodeIdx != -1 && input_.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT))
