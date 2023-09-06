@@ -60,7 +60,8 @@ public:
           bgColorRender_{0xff, 0xff, 0xff},
           bgColorPicking_{0x00, 0x00, 0xff},
           playSim_(false),
-          doNIterSim_(1),
+          absTolSim_(SIM_TOL_ABS),
+          doNStepsSim_(1),
           gravSim_(true),
           edgeSim_(true),
           simCollision_(true),
@@ -86,7 +87,8 @@ private:
     vcg::Trackball trackball_;
 
     bool playSim_;
-    int doNIterSim_;
+    float absTolSim_;
+    int doNStepsSim_;
     bool gravSim_;
     bool edgeSim_;
     bool simCollision_;
@@ -212,15 +214,19 @@ private:
                 trackball_.ButtonUp(vcg::Trackball::KEY_ALT);
         }
 
+        if(input_.isKeyPressed(GLFW_KEY_SPACE))
+            playSim_ = !playSim_; 
+
         ImGui::Begin("Sim");
         ImGui::Text("N iters: %i", simIters_);
         ImGui::PlotLines("Deltas", simSserrs_.data(), simSserrs_.size(), 0, nullptr, FLT_MAX, FLT_MAX, {200, 30});
+        ImGui::DragFloat("Abs tolerance", &absTolSim_, 1e-2, 0.1, 1e-12, "%.5e");
         ImGui::Checkbox("Play sim", &playSim_);
-        if(ImGui::Button("Single step"))
+        if(ImGui::Button("Do full iteration"))
             simIters_ = simGrids();
-        if(ImGui::Button("Do N iterations"))
-            simIters_ = simGrids(doNIterSim_);
-        ImGui::DragInt("N", &doNIterSim_, 1, 1, 100);
+        if(ImGui::Button("Do N steps"))
+            simIters_ = simGrids(doNStepsSim_);
+        ImGui::DragInt("N", &doNStepsSim_, 1, 1, 1000);
         ImGui::End();
 
         ImGui::Begin("Constraints");
@@ -384,15 +390,22 @@ private:
                     s.resolve();
 
             for(int g = 0; g < N_GRIDS; g++)
-            {
-                prevNodePos_[g] -= grids_[g].pos;
                 for(int n = 0; n < grids_[g].getNNodes(); n++)
-                    sse += prevNodePos_[g].col(n).squaredNorm();
-            }
+                    sse += (prevNodePos_[g].col(n) - grids_[g].pos.col(n)).squaredNorm();
             simSserrs_.push_back(sse);
 
-            if(sse < SIM_TOL_ABS || (prevSse - sse) / sse < SIM_TOL_REL)
+            if(sse < absTolSim_ || (prevSse - sse) / sse < SIM_TOL_REL)
                 stop = true;
+
+            if(sse > prevSse)
+            {
+                frmwrk::Debug::logWarning("SSE increased: reversing, adjusting abs tol, stopping");
+                for(int g = 0; g < N_GRIDS; g++)
+                    grids_[g].pos = Eigen::Matrix3Xd(prevNodePos_[g]);
+                stop = true;
+                playSim_ = false;
+                absTolSim_ = prevSse;
+            }
 
             if(nIters > SIM_MAX_ITERS)
             {
