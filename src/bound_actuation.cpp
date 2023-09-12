@@ -394,24 +394,27 @@ private:
                     sse += (prevNodePos_[g].col(n) - grids_[g].pos.col(n)).squaredNorm();
             simSserrs_.push_back(sse);
 
-            if(sse < absTolSim_ || (prevSse - sse) / sse < SIM_TOL_REL)
-                stop = true;
-
-            if(sse > prevSse)
+            if(doNIters == std::numeric_limits<int>::max())
             {
-                frmwrk::Debug::logWarning("SSE increased: reversing, adjusting abs tol, stopping");
-                for(int g = 0; g < N_GRIDS; g++)
-                    grids_[g].pos = Eigen::Matrix3Xd(prevNodePos_[g]);
-                stop = true;
-                playSim_ = false;
-                absTolSim_ = prevSse;
-            }
+                if(sse < absTolSim_ || (prevSse - sse) / sse < SIM_TOL_REL)
+                    stop = true;
 
-            if(nIters > SIM_MAX_ITERS)
-            {
-                frmwrk::Debug::logWarning("Sim iters exceeded, stopping");
-                stop = true;
-                playSim_ = false;
+                if(sse > prevSse)
+                {
+                    frmwrk::Debug::logWarning("SSE increased: reversing, adjusting abs tol, stopping");
+                    for(int g = 0; g < N_GRIDS; g++)
+                        grids_[g].pos = Eigen::Matrix3Xd(prevNodePos_[g]);
+                    stop = true;
+                    playSim_ = false;
+                    absTolSim_ = prevSse;
+                }
+
+                if(nIters > SIM_MAX_ITERS)
+                {
+                    frmwrk::Debug::logWarning("Sim iters exceeded, stopping");
+                    stop = true;
+                    playSim_ = false;
+                }
             }
 
             prevSse = sse;
