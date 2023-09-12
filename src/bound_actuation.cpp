@@ -14,7 +14,7 @@
 #define N_GRIDS 2
 #define MAX_GRID_COLS 10
 
-#define SIM_GRAV_SHIFT 1e-3
+#define SIM_GRAV_SHIFT 1e-2
 #define SIM_TOL_ABS 1e-10
 #define SIM_TOL_REL 1e-5
 #define SIM_MAX_ITERS 1000000
@@ -53,6 +53,10 @@ public:
               SphereCollConstr(&grids_[0], Eigen::Vector3d{0, 0, 0}, 0.5),
               SphereCollConstr(&grids_[1], Eigen::Vector3d{0, 0, 0}, 0.5)
           },
+          fixCs_{
+              FixedNodeConstr(&grids_[0]),
+              FixedNodeConstr(&grids_[1])
+          },
           gridColors_{
               {0x60, 0x60, 0xde},
               {0x60, 0xbc, 0xc0}
@@ -78,6 +82,7 @@ private:
     const GLubyte gridColors_[N_GRIDS][3];
     EdgeLenConstr edgeLenCs_[N_GRIDS];
     SphereCollConstr sphereCollCs_[N_GRIDS];
+    FixedNodeConstr fixCs_[N_GRIDS];
     std::vector<ScissorConstr> scissorCs_;
 
     const GLubyte bgColorRender_[3];
@@ -146,7 +151,7 @@ private:
                     else if(pickedNodeIdx != -1 && input_.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT))
                     {
                         pick_ = Pick(g, pickedNodeIdx, pickedDepth);
-                        grids_[g].fixedNodes.insert(pickedNodeIdx);
+                        fixCs_[g].fixNode(pickedNodeIdx);
                         break;
                     }
                 }
@@ -181,6 +186,7 @@ private:
                         worldPos(1) / worldPos(3),
                         worldPos(2) / worldPos(3)
                     };
+                    fixCs_[pick_.gridIdx].fixNode(pick_.nodeIdx);
                 }
                 else
                     trackball_.MouseMove((int)curPos(0), (int)curPos(1));
@@ -189,7 +195,7 @@ private:
             if(input_.isMouseButtonReleased(GLFW_MOUSE_BUTTON_LEFT))
             {
                 if(pick_.pick)
-                    grids_[pick_.gridIdx].fixedNodes.erase(pick_.nodeIdx);
+                    fixCs_[pick_.gridIdx].freeNode(pick_.nodeIdx);
                 pick_ = Pick();
                 trackball_.MouseUp((int)curPos(0), (int)curPos(1), vcg::Trackball::BUTTON_LEFT);
             }
@@ -285,7 +291,7 @@ private:
         glBegin(GL_POINTS);
         for(int n = 0; n < grid.getNNodes(); n++)
         {
-            if(grid.isNodeFixed(n) || (pick_.pick && pick_.gridIdx == gridIdx && pick_.nodeIdx == n))
+            if(fixCs_[gridIdx].isNodeFixed(n) || (pick_.pick && pick_.gridIdx == gridIdx && pick_.nodeIdx == n))
                 glColor3ub(0xff, 0x00, 0x00);
             else
                 glColor3ub(gridColors_[gridIdx][0], gridColors_[gridIdx][1], gridColors_[gridIdx][2]);
@@ -358,12 +364,7 @@ private:
         if(gravSim_)
             for(int g = 0; g < N_GRIDS; g++)
                 for(int n = 0; n < grids_[g].getNNodes(); n++)
-                {
-                    if(grids_[g].isNodeFixed(n))
-                        continue;
-
                     grids_[g].nodePos(n) -= Eigen::Vector3d{0, SIM_GRAV_SHIFT, 0};
-                }
         
         bool stop = false;
         int nIters = 0;
@@ -376,6 +377,9 @@ private:
             sse = 0;
             for(int g = 0; g < N_GRIDS; g++)
                 prevNodePos_[g] = Eigen::Matrix3Xd(grids_[g].pos);
+
+            for(const FixedNodeConstr& f : fixCs_)
+                f.resolve();
             
             if(edgeSim_)
                 for(const EdgeLenConstr& e : edgeLenCs_)
@@ -439,7 +443,6 @@ private:
             std::unordered_map<int, int> nodeIndexMap;
             std::vector<Eigen::Array2i> newEdges;
             std::vector<double> newEdgeLengths;
-            std::unordered_set<int> newFixedNodes;
 
             for(int n = 0; n < grid.getNNodes(); n++)
             {
@@ -453,6 +456,8 @@ private:
                 nodeIndexMap[n] = newNodes.size() - 1;
             }
             
+            fixCs_[g] = FixedNodeConstr(&grids_[g]);
+
             for(int e = 0; e < grid.getNEdges(); e++)
             {
                 auto p1IndexPair = nodeIndexMap.find(grid.edge(e)[0]);
@@ -498,7 +503,7 @@ private:
                     newNodePos -= (deltaLength * edgeVec);
                     edgeLength = edgeLenCs_[g].getLength(e) - abs(deltaLength);
                     newNodes.push_back(newNodePos);
-                    newFixedNodes.insert(newNodes.size() - 1);
+                    fixCs_[g].fixNode(newNodes.size() - 1, newNodePos);
                 }
 
                 newEdges.emplace_back(p1Index, p2Index);
@@ -513,7 +518,7 @@ private:
             for(int e = 0; e < newEdges.size(); e++)
                 newEdgesMatrix.col(e) = newEdges[e];
 
-            grids_[g] = Grid(newNodeMatrix, newEdgesMatrix, newFixedNodes);
+            grids_[g] = Grid(newNodeMatrix, newEdgesMatrix);
             edgeLenCs_[g] = EdgeLenConstr(&grids_[g], newEdgeLengths);
         }
     }
@@ -530,10 +535,6 @@ private:
                         int nodeA1Indx = grids_[gA].edge(eA)[1];
                         int nodeB0Indx = grids_[gB].edge(eB)[0];
                         int nodeB1Indx = grids_[gB].edge(eB)[1];
-
-                        if(grids_[gA].isNodeFixed(nodeA0Indx) || grids_[gA].isNodeFixed(nodeA1Indx) ||
-                           grids_[gB].isNodeFixed(nodeB0Indx) || grids_[gB].isNodeFixed(nodeB1Indx))
-                           continue;
                         
                         ScissorConstr s = ScissorConstr(&grids_[gA], nodeA0Indx, nodeA1Indx,
                                                         &grids_[gB], nodeB0Indx, nodeB1Indx);

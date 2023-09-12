@@ -10,10 +10,9 @@ class EdgeLenConstr;
 
 struct Grid
 {
-    Grid(Eigen::Matrix3Xd nodePos, Eigen::Array2Xi edges, std::unordered_set<int> fixedNodes)
+    Grid(Eigen::Matrix3Xd nodePos, Eigen::Array2Xi edges)
         : pos(nodePos),
-          edges(edges),
-          fixedNodes(fixedNodes)
+          edges(edges)
     {}
     
     Grid(Eigen::Vector3d center, int nRows, int nCols,
@@ -48,14 +47,8 @@ struct Grid
     inline Eigen::Block<Eigen::Matrix3Xd, 3, 1, true> nodePos(int idx) { return pos.col(idx); }
     inline Eigen::Block<Eigen::Array2Xi, 2, 1, true> edge(int idx) { return edges.col(idx); }
     
-    bool isNodeFixed(int idx) const {
-        auto it = fixedNodes.find(idx);
-        return it != fixedNodes.end();
-    }
-    
     Eigen::Matrix3Xd pos;
     Eigen::Array2Xi edges;
-    std::unordered_set<int> fixedNodes;
 };
 
 

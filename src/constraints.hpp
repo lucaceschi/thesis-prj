@@ -4,6 +4,7 @@
 #include "grid.hpp"
 #include "param_distance3.hpp"
 
+#include <unordered_map>
 #include <Eigen/Dense>
 
 
@@ -36,18 +37,10 @@ public:
             Eigen::Vector3d v = grid_->nodePos(grid_->edge(e)[0]) - grid_->nodePos(grid_->edge(e)[1]);
             double dist = v.norm();
             v.normalize();
-            double delta = (lens_[e] - dist);
+            double delta = (lens_[e] - dist) / 2.0;
 
-            if(grid_->isNodeFixed(grid_->edge(e)[0]))
-                grid_->nodePos(grid_->edge(e)[1]) -= delta * v;
-            else if(grid_->isNodeFixed(grid_->edge(e)[1]))
-                grid_->nodePos(grid_->edge(e)[0]) += delta * v;
-            else
-            {
-                delta /= 2;
-                grid_->nodePos(grid_->edge(e)[0]) += delta * v;
-                grid_->nodePos(grid_->edge(e)[1]) -= delta * v;
-            }
+            grid_->nodePos(grid_->edge(e)[0]) += delta * v;
+            grid_->nodePos(grid_->edge(e)[1]) -= delta * v;
 
             maxDelta = std::max(maxDelta, std::abs(delta));
         }
@@ -77,10 +70,7 @@ public:
         double currDist, currDelta, maxDelta = 0;
         
         for(int n = 0; n < grid_->getNNodes(); n++)
-        {
-            if(grid_->isNodeFixed(n))
-                continue;
-            
+        {            
             currDist = (grid_->nodePos(n) - centerPos_).norm();
             currDelta = radius_ - currDist; 
             if(currDelta > 0)
@@ -101,6 +91,50 @@ public:
 private:
     Grid* grid_;
     double radius_;
+};
+
+
+class FixedNodeConstr : public HardConstraint
+{    
+public:
+    FixedNodeConstr(Grid* grid)
+        : grid_(grid)
+    {}
+
+    void fixNode(int nodeIndx, Eigen::Vector3d pos)
+    {
+        fixedPos_[nodeIndx] = pos;
+    }
+
+    void fixNode(int nodeIndx)
+    {
+        fixNode(nodeIndx, grid_->nodePos(nodeIndx));
+    }
+
+    void freeNode(int nodeIndx)
+    {
+        typedef std::unordered_map<int, Eigen::Vector3d>::iterator Iterator;
+        Iterator it = fixedPos_.find(nodeIndx);
+        if(it != fixedPos_.end())
+            fixedPos_.erase(it);
+    }
+
+    bool isNodeFixed(int nodeIndx) const
+    {
+        return fixedPos_.find(nodeIndx) != fixedPos_.cend();
+    }
+
+    virtual double resolve() const
+    {
+        typedef std::unordered_map<int, Eigen::Vector3d>::const_iterator CIterator;
+        for(CIterator it = fixedPos_.cbegin(); it != fixedPos_.cend(); it++)
+            grid_->nodePos(it->first) = it->second;
+        return 0;
+    }
+
+private:
+    Grid* grid_;
+    std::unordered_map<int, Eigen::Vector3d> fixedPos_;
 };
 
 
