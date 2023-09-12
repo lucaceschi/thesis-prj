@@ -174,8 +174,8 @@ public:
     {
         Eigen::Vector3d shiftDir = getCrossPointB() - getCrossPointA();
         double delta = (shiftDir.norm() - dist_);
-        double deltaA = delta * omegaA_ / (omegaA_ + omegaB_);
-        double deltaB = delta * omegaB_ / (omegaA_ + omegaB_);
+        double deltaA = delta * omegaB_ / (omegaA_ + omegaB_);
+        double deltaB = delta * omegaA_ / (omegaA_ + omegaB_);
         double deltaA0 = deltaA * (1 - alpha_) * omegaA_;
         double deltaA1 = deltaA * (alpha_)     * omegaA_;
         double deltaB0 = deltaB * (1 - beta_)  * omegaB_;
