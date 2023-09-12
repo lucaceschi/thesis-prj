@@ -14,10 +14,10 @@
 #define N_GRIDS 2
 #define MAX_GRID_COLS 10
 
-#define SIM_GRAV_SHIFT 1e-2
+#define SIM_GRAV_SHIFT 5e-3
 #define SIM_TOL_ABS 1e-10
 #define SIM_TOL_REL 1e-5
-#define SIM_MAX_ITERS 1000000
+#define SIM_MAX_ITERS 100000
 #define SIM_SCISSOR_EE_MIN_DIST 1e-2
 #define SIM_SCISSOR_CC_MIN_DIST 1e-2
 #define SIM_SCISSOR_CN_MIN_DIST 0.1
@@ -42,12 +42,12 @@ public:
     MainApp()
         : App("Boundary actuation", Eigen::Vector2i{1000, 800}, true),
           grids_{
-              Grid({0, 0.6, 0}, 5, 5, {1, 0, 0}, {0, 0, 1},  0.1),
-              Grid({0, 0.5, 0}, 5, 5, {1, 0, 1}, {-1, 0, 1}, 0.1)
+              Grid({0, 0.6, 0}, 8, 8, {1, 0, 0}, {0, 0, 1},  0.2),
+              Grid({0, 0.5, 0}, 8, 8, {1, 0, 1}, {-1, 0, 1}, 0.2)
           },
           edgeLenCs_{
-              EdgeLenConstr(&grids_[0], 0.1),
-              EdgeLenConstr(&grids_[1], 0.1)
+              EdgeLenConstr(&grids_[0], 0.2),
+              EdgeLenConstr(&grids_[1], 0.2)
           },
           sphereCollCs_{
               SphereCollConstr(&grids_[0], Eigen::Vector3d{0, 0, 0}, 0.5),
@@ -100,6 +100,7 @@ private:
     bool simScissors_;
     int simIters_;
     std::vector<float> simSserrs_;
+    std::vector<float> simMaxDeltas_;
     Eigen::Matrix3Xd prevNodePos_[N_GRIDS];
 
 
@@ -225,8 +226,9 @@ private:
 
         ImGui::Begin("Sim");
         ImGui::Text("N iters: %i", simIters_);
-        ImGui::PlotLines("Deltas", simSserrs_.data(), simSserrs_.size(), 0, nullptr, FLT_MAX, FLT_MAX, {200, 30});
-        ImGui::DragFloat("Abs tolerance", &absTolSim_, 1e-2, 0.1, 1e-12, "%.5e");
+        ImGui::PlotLines("SSE", simSserrs_.data(), simSserrs_.size(), 0, nullptr, FLT_MAX, FLT_MAX, {200, 30});
+        ImGui::PlotLines("Max delta", simMaxDeltas_.data(), simMaxDeltas_.size(), 0, nullptr, FLT_MAX, FLT_MAX, {200, 30});
+        ImGui::DragFloat("SSE tol", &absTolSim_, 1e-2, 0.1, 1e-12, "%.5e");
         ImGui::Checkbox("Play sim", &playSim_);
         if(ImGui::Button("Do full iteration"))
             simIters_ = simGrids();
@@ -370,28 +372,33 @@ private:
         int nIters = 0;
         double prevSse = std::numeric_limits<double>::infinity();
         double sse;
+        double maxDelta;
 
         simSserrs_.clear();
+        simMaxDeltas_.clear();
         while(!stop)
         {
             sse = 0;
+            maxDelta = 0;
             for(int g = 0; g < N_GRIDS; g++)
                 prevNodePos_[g] = Eigen::Matrix3Xd(grids_[g].pos);
 
             for(const FixedNodeConstr& f : fixCs_)
-                f.resolve();
+                maxDelta = std::max(maxDelta, f.resolve());
             
             if(edgeSim_)
                 for(const EdgeLenConstr& e : edgeLenCs_)
-                    e.resolve();
+                    maxDelta = std::max(maxDelta, e.resolve());
 
             if(simScissors_)
                 for(const ScissorConstr& s : scissorCs_)
-                    s.resolve();
+                    maxDelta = std::max(maxDelta, s.resolve());
 
             if(simCollision_)
                 for(const SphereCollConstr& s : sphereCollCs_)
-                    s.resolve();
+                    maxDelta = std::max(maxDelta, s.resolve());
+
+            simMaxDeltas_.push_back(maxDelta);
 
             for(int g = 0; g < N_GRIDS; g++)
                 for(int n = 0; n < grids_[g].getNNodes(); n++)

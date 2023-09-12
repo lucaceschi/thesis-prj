@@ -127,9 +127,15 @@ public:
     virtual double resolve() const
     {
         typedef std::unordered_map<int, Eigen::Vector3d>::const_iterator CIterator;
+
+        double maxDelta = 0;
         for(CIterator it = fixedPos_.cbegin(); it != fixedPos_.cend(); it++)
+        {
+            maxDelta = std::max(maxDelta, (grid_->nodePos(it->first) - it->second).squaredNorm());
             grid_->nodePos(it->first) = it->second;
-        return 0;
+        }
+
+        return maxDelta;
     }
 
 private:
@@ -187,7 +193,7 @@ public:
         gridB_->nodePos(nodeB0Indx_) -= deltaB0 * shiftDir;
         gridB_->nodePos(nodeB1Indx_) -= deltaB1 * shiftDir;
 
-        return std::max({deltaA0, deltaA1, deltaB0, deltaB1});
+        return std::max({std::abs(deltaA0), std::abs(deltaA1), std::abs(deltaB0), std::abs(deltaB1)});
     }
 
     Grid* getGridA() const { return gridA_; }
