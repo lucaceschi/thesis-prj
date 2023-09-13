@@ -74,7 +74,8 @@ public:
           prevNodePos_{
               Eigen::Matrix3Xd(grids_[0].pos),
               Eigen::Matrix3Xd(grids_[1].pos)
-          }
+          },
+          scissorToolCount_(0)
     {}
 
 private:
@@ -103,6 +104,8 @@ private:
     std::vector<float> simMaxDeltas_;
     Eigen::Matrix3Xd prevNodePos_[N_GRIDS];
 
+    Pick scissorToolPicks_[4];
+    int scissorToolCount_;
 
     virtual bool initApp()
     {
@@ -151,8 +154,43 @@ private:
                     }
                     else if(pickedNodeIdx != -1 && input_.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT))
                     {
-                        pick_ = Pick(g, pickedNodeIdx, pickedDepth);
-                        fixCs_[g].fixNode(pickedNodeIdx);
+                        if(input_.isKeyHeld(GLFW_KEY_S))
+                        {
+                            scissorToolPicks_[scissorToolCount_++] = Pick(g, pickedNodeIdx, pickedDepth);
+                            if(scissorToolCount_ == 4)
+                            {
+                                if(scissorToolPicks_[0].gridIdx == scissorToolPicks_[1].gridIdx &&
+                                   scissorToolPicks_[2].gridIdx == scissorToolPicks_[3].gridIdx &&
+                                   scissorToolPicks_[0].nodeIdx < grids_[scissorToolPicks_[0].gridIdx].getNNodes() &&
+                                   scissorToolPicks_[1].nodeIdx < grids_[scissorToolPicks_[1].gridIdx].getNNodes() &&
+                                   scissorToolPicks_[2].nodeIdx < grids_[scissorToolPicks_[2].gridIdx].getNNodes() &&
+                                   scissorToolPicks_[3].nodeIdx < grids_[scissorToolPicks_[3].gridIdx].getNNodes())
+                                {
+                                    scissorCs_.emplace_back(&grids_[scissorToolPicks_[0].gridIdx],
+                                                            scissorToolPicks_[0].nodeIdx,
+                                                            scissorToolPicks_[1].nodeIdx,
+                                                            &grids_[scissorToolPicks_[2].gridIdx],
+                                                            scissorToolPicks_[2].nodeIdx,
+                                                            scissorToolPicks_[3].nodeIdx);
+                                    frmwrk::Debug::log("Added scissor: %i:%i,%i %i:%i,%i",
+                                        scissorToolPicks_[0].gridIdx,
+                                        scissorToolPicks_[0].nodeIdx,
+                                        scissorToolPicks_[1].nodeIdx,
+                                        scissorToolPicks_[2].gridIdx,
+                                        scissorToolPicks_[2].nodeIdx,
+                                        scissorToolPicks_[3].nodeIdx);
+                                }
+                                else
+                                    frmwrk::Debug::logError("Invalid node selection");
+
+                                scissorToolCount_ = 0;
+                            }
+                        }
+                        else
+                        {
+                            pick_ = Pick(g, pickedNodeIdx, pickedDepth);
+                            fixCs_[g].fixNode(pickedNodeIdx);
+                        }
                         break;
                     }
                 }
