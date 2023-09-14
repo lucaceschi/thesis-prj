@@ -18,7 +18,7 @@
 #define SIM_TOL_ABS 1e-10
 #define SIM_TOL_REL 1e-5
 #define SIM_MAX_ITERS 100000
-#define SIM_SCISSOR_EE_MIN_DIST 1e-2
+#define SIM_SCISSOR_EE_MIN_DIST 1e-5
 #define SIM_SCISSOR_CC_MIN_DIST 1e-2
 #define SIM_SCISSOR_CN_MIN_DIST 0.1
 
@@ -70,6 +70,7 @@ public:
           edgeSim_(true),
           simCollision_(true),
           simScissors_(true),
+          addScissors_(false),
           simIters_(0),
           prevNodePos_{
               Eigen::Matrix3Xd(grids_[0].pos),
@@ -98,6 +99,7 @@ private:
     bool edgeSim_;
     bool simCollision_;
     bool simScissors_;
+    bool addScissors_;
     int simIters_;
     std::vector<float> simSserrs_;
     std::vector<float> simMaxDeltas_;
@@ -119,7 +121,7 @@ private:
         
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
-        gluLookAt(0,0,4,   0,0,0,   0,1,0);
+        gluLookAt(0,4,0,   0,0,0,   0,0,-1);
         trackball_.GetView();
         trackball_.Apply();
 
@@ -242,17 +244,20 @@ private:
         ImGui::Checkbox("Edge Lenght", &edgeSim_);
         ImGui::Checkbox("Collisions", &simCollision_);
         ImGui::Checkbox("Scissors", &simScissors_);
+        ImGui::Checkbox("Add scissors", &addScissors_);
         if(ImGui::Button("Cut"))
             cut();
-        if(ImGui::Button("Add scissors"))
-        {
-            int nAdded = addScissorC();
-            frmwrk::Debug::log("Added %i sciss constr", nAdded);
-        }
         ImGui::End();
 
         if(playSim_)
             simIters_ = simGrids();
+
+        if(addScissors_)
+        {
+            int nAdded = addScissorC();
+            if(nAdded > 0)
+                frmwrk::Debug::log("Added %i sciss constr", nAdded);
+        }
 
         for(int g = 0; g < N_GRIDS; g++)
             drawGridRender(g, (g == 0));
