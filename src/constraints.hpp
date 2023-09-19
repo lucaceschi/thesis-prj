@@ -151,27 +151,23 @@ private:
 class ScissorConstr : public HardConstraint
 {
 public:
-    ScissorConstr(std::vector<Grid>& grids,
-                  int gridAIdx, int nodeA0Idx, int nodeA1Idx,
-                  int gridBIdx, int nodeB0Idx, int nodeB1Idx)
+    ScissorConstr(std::vector<Grid>& grids, int gridAIdx, int edgeAIdx, int gridBIdx, int edgeBIdx)
         : gridAIdx_(gridAIdx),
-          nodeA0Idx_(nodeA0Idx),
-          nodeA1Idx_(nodeA1Idx),
+          edgeAIdx_(edgeAIdx),
           gridBIdx_(gridBIdx),
-          nodeB0Idx_(nodeB0Idx),
-          nodeB1Idx_(nodeB1Idx)
+          edgeBIdx_(edgeBIdx)
     {
         Grid& gridA = grids[gridAIdx];
         Grid& gridB = grids[gridBIdx];
         
         vcg::Segment3d segA = vcg::Segment3d(
-            vcg::Point3d(gridA.nodePos(nodeA0Idx).data()),
-            vcg::Point3d(gridA.nodePos(nodeA1Idx).data())
+            vcg::Point3d(gridA.nodePos(gridA.edge(edgeAIdx)[0]).data()),
+            vcg::Point3d(gridA.nodePos(gridA.edge(edgeAIdx)[1]).data())
         );
 
         vcg::Segment3d segB = vcg::Segment3d(
-            vcg::Point3d(gridB.nodePos(nodeB0Idx).data()),
-            vcg::Point3d(gridB.nodePos(nodeB1Idx).data())
+            vcg::Point3d(gridB.nodePos(gridB.edge(edgeBIdx)[0]).data()),
+            vcg::Point3d(gridB.nodePos(gridB.edge(edgeBIdx)[1]).data())
         );
 
         bool parallel;
@@ -199,20 +195,18 @@ public:
         double deltaB1 = deltaB * (beta_)      * omegaB_;
         shiftDir.normalize();
 
-        gridA.nodePos(nodeA0Idx_) += deltaA0 * shiftDir;
-        gridA.nodePos(nodeA1Idx_) += deltaA1 * shiftDir;
-        gridB.nodePos(nodeB0Idx_) -= deltaB0 * shiftDir;
-        gridB.nodePos(nodeB1Idx_) -= deltaB1 * shiftDir;
+        gridA.nodePos(gridA.edge(edgeAIdx_)[0]) += deltaA0 * shiftDir;
+        gridA.nodePos(gridA.edge(edgeAIdx_)[1]) += deltaA1 * shiftDir;
+        gridB.nodePos(gridB.edge(edgeBIdx_)[0]) -= deltaB0 * shiftDir;
+        gridB.nodePos(gridB.edge(edgeBIdx_)[1]) -= deltaB1 * shiftDir;
 
         return std::max({std::abs(deltaA0), std::abs(deltaA1), std::abs(deltaB0), std::abs(deltaB1)});
     }
 
     int getGridAIdx()  const { return gridAIdx_; }
     int getGridBIdx()  const { return gridBIdx_; }
-    int getNodeA0Idx() const { return nodeA0Idx_; }
-    int getNodeA1Idx() const { return nodeA1Idx_; }
-    int getNodeB0Idx() const { return nodeB0Idx_; }
-    int getNodeB1Idx() const { return nodeB1Idx_; }
+    int getEdgeAIdx() const { return edgeAIdx_; }
+    int getEdgeBIdx() const { return edgeBIdx_; }
     double getDist() const { return dist_; }
     double getAlpha() const { return alpha_; }
     double getBeta() const { return beta_; }
@@ -220,21 +214,23 @@ public:
     inline Eigen::Vector3d getCrossPointA(std::vector<Grid>& grids) const
     {
         Grid& gridA = grids[gridAIdx_];
-        return gridA.nodePos(nodeA0Idx_) * (1 - alpha_) + gridA.nodePos(nodeA1Idx_) * alpha_;
+        Eigen::Vector3d n0 = gridA.nodePos(gridA.edge(edgeAIdx_)[0]);
+        Eigen::Vector3d n1 = gridA.nodePos(gridA.edge(edgeAIdx_)[1]);
+        return n0 * (1 - alpha_) + n1 * alpha_;
     }
 
     inline Eigen::Vector3d getCrossPointB(std::vector<Grid>& grids) const
     {
         Grid& gridB = grids[gridBIdx_];
-        return gridB.nodePos(nodeB0Idx_) * (1 - beta_) + gridB.nodePos(nodeB1Idx_) * beta_;
+        Eigen::Vector3d n0 = gridB.nodePos(gridB.edge(edgeBIdx_)[0]);
+        Eigen::Vector3d n1 = gridB.nodePos(gridB.edge(edgeBIdx_)[1]);
+        return n0 * (1 - beta_) + n1 * beta_;
     }
 
 private:
-    int gridAIdx_;
-    int nodeA0Idx_, nodeA1Idx_;
+    int gridAIdx_, edgeAIdx_;
     double alpha_, omegaA_;
-    int gridBIdx_;
-    int nodeB0Idx_, nodeB1Idx_;
+    int gridBIdx_, edgeBIdx_;
     double beta_, omegaB_;
     double dist_;
 };

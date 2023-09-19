@@ -590,15 +590,8 @@ private:
             for(int gB = gA+1; gB < grids_.size(); gB++)
                 for(int eA = 0; eA < grids_[gA].getNEdges(); eA++)
                     for(int eB = 0; eB < grids_[gB].getNEdges(); eB++)
-                    {
-                        int nodeA0Indx = grids_[gA].edge(eA)[0];
-                        int nodeA1Indx = grids_[gA].edge(eA)[1];
-                        int nodeB0Indx = grids_[gB].edge(eB)[0];
-                        int nodeB1Indx = grids_[gB].edge(eB)[1];
-                        
-                        ScissorConstr s = ScissorConstr(grids_,
-                                                        gA, nodeA0Indx, nodeA1Indx,
-                                                        gB, nodeB0Indx, nodeB1Indx);
+                    {                        
+                        ScissorConstr s = ScissorConstr(grids_, gA, eA, gB, eB);
 
                         if(s.getDist() > SIM_SCISSOR_EE_MIN_DIST ||
                            std::abs(s.getAlpha() - 0.5) > (0.5 - SIM_SCISSOR_CN_MIN_DIST) ||
