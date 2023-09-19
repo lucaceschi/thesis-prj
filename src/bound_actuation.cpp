@@ -4,6 +4,8 @@
 #include "constraints.hpp"
 
 #include <stdio.h>
+#include <vector>
+#include <array>
 #include <unordered_map>
 
 #include <Eigen/Dense>
@@ -11,16 +13,15 @@
 #include <wrap/gui/trackball.h>
 
 
-#define N_GRIDS 2
 #define MAX_GRID_COLS 10
 
 #define SIM_GRAV_SHIFT 5e-3
 #define SIM_TOL_ABS 1e-10
 #define SIM_TOL_REL 1e-5
 #define SIM_MAX_ITERS 100000
-#define SIM_SCISSOR_EE_MIN_DIST 1e-5
+#define SIM_SCISSOR_EE_MIN_DIST 1e-3
 #define SIM_SCISSOR_CC_MIN_DIST 1e-2
-#define SIM_SCISSOR_CN_MIN_DIST 0.1
+#define SIM_SCISSOR_CN_MIN_DIST 1e-2
 
 
 struct Pick
@@ -46,16 +47,16 @@ public:
               Grid({0, 0.5, 0}, 8, 8, {1, 0, 1}, {-1, 0, 1}, 0.2)
           },
           edgeLenCs_{
-              EdgeLenConstr(&grids_[0], 0.2),
-              EdgeLenConstr(&grids_[1], 0.2)
+              EdgeLenConstr(grids_, 0, 0.2),
+              EdgeLenConstr(grids_, 1, 0.2)
           },
           sphereCollCs_{
-              SphereCollConstr(&grids_[0], Eigen::Vector3d{0, 0, 0}, 0.5),
-              SphereCollConstr(&grids_[1], Eigen::Vector3d{0, 0, 0}, 0.5)
+              SphereCollConstr(0, Eigen::Vector3d{0, 0, 0}, 0.5),
+              SphereCollConstr(1, Eigen::Vector3d{0, 0, 0}, 0.5)
           },
           fixCs_{
-              FixedNodeConstr(&grids_[0]),
-              FixedNodeConstr(&grids_[1])
+              FixedNodeConstr(0),
+              FixedNodeConstr(1)
           },
           gridColors_{
               {0x60, 0x60, 0xde},
@@ -71,19 +72,15 @@ public:
           simCollision_(true),
           simScissors_(true),
           addScissors_(false),
-          simIters_(0),
-          prevNodePos_{
-              Eigen::Matrix3Xd(grids_[0].pos),
-              Eigen::Matrix3Xd(grids_[1].pos)
-          }
+          simIters_(0)
     {}
 
 private:
-    Grid grids_[N_GRIDS];
-    const GLubyte gridColors_[N_GRIDS][3];
-    EdgeLenConstr edgeLenCs_[N_GRIDS];
-    SphereCollConstr sphereCollCs_[N_GRIDS];
-    FixedNodeConstr fixCs_[N_GRIDS];
+    std::vector<Grid> grids_;
+    std::vector<std::array<GLubyte, 3>> gridColors_;
+    std::vector<EdgeLenConstr> edgeLenCs_;
+    std::vector<SphereCollConstr> sphereCollCs_;
+    std::vector<FixedNodeConstr> fixCs_;
     std::vector<ScissorConstr> scissorCs_;
 
     const GLubyte bgColorRender_[3];
@@ -103,12 +100,13 @@ private:
     int simIters_;
     std::vector<float> simSserrs_;
     std::vector<float> simMaxDeltas_;
-    Eigen::Matrix3Xd prevNodePos_[N_GRIDS];
+    std::vector<Eigen::Matrix3Xd> prevNodePos_;
 
 
     virtual bool initApp()
     {
         glClearColor(bgColorRender_[0]/255.0, bgColorRender_[1]/255.0, bgColorRender_[2]/255.0, 1.0f);
+        prevNodePos_.resize(grids_.size());
         return true;
     }
 
@@ -137,7 +135,7 @@ private:
                 GLfloat pickedDepth;
                 int pickedNodeIdx;
 
-                for(int g = 0; g < N_GRIDS; g++)
+                for(int g = 0; g < grids_.size(); g++)
                 {
                     drawGridPick(g);
                     glReadPixels(curPos(0), curPos(1), 1, 1, GL_RGB, GL_UNSIGNED_BYTE, &pickedColor);
@@ -154,7 +152,7 @@ private:
                     else if(pickedNodeIdx != -1 && input_.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT))
                     {
                         pick_ = Pick(g, pickedNodeIdx, pickedDepth);
-                        fixCs_[g].fixNode(pickedNodeIdx);
+                        fixCs_[g].fixNode(grids_, pickedNodeIdx);
                         break;
                     }
                 }
@@ -189,7 +187,7 @@ private:
                         worldPos(1) / worldPos(3),
                         worldPos(2) / worldPos(3)
                     };
-                    fixCs_[pick_.gridIdx].fixNode(pick_.nodeIdx);
+                    fixCs_[pick_.gridIdx].fixNode(grids_, pick_.nodeIdx);
                 }
                 else
                     trackball_.MouseMove((int)curPos(0), (int)curPos(1));
@@ -259,7 +257,7 @@ private:
                 frmwrk::Debug::log("Added %i sciss constr", nAdded);
         }
 
-        for(int g = 0; g < N_GRIDS; g++)
+        for(int g = 0; g < grids_.size(); g++)
             drawGridRender(g, (g == 0));
 
         return true;
@@ -315,8 +313,8 @@ private:
         glBegin(GL_POINTS);
         for(const ScissorConstr& s : scissorCs_)
         {
-            Eigen::Vector3d cpA = s.getCrossPointA();
-            Eigen::Vector3d cpB = s.getCrossPointB();
+            Eigen::Vector3d cpA = s.getCrossPointA(grids_);
+            Eigen::Vector3d cpB = s.getCrossPointB(grids_);
             glVertex3d(cpA(0), cpA(1), cpA(2));
             glVertex3d(cpB(0), cpB(1), cpB(2));
         }
@@ -369,7 +367,7 @@ private:
     int simGrids(int doNIters = std::numeric_limits<int>::max())
     {
         if(gravSim_)
-            for(int g = 0; g < N_GRIDS; g++)
+            for(int g = 0; g < grids_.size(); g++)
                 for(int n = 0; n < grids_[g].getNNodes(); n++)
                     grids_[g].nodePos(n) -= Eigen::Vector3d{0, SIM_GRAV_SHIFT, 0};
         
@@ -385,27 +383,27 @@ private:
         {
             sse = 0;
             maxDelta = 0;
-            for(int g = 0; g < N_GRIDS; g++)
+            for(int g = 0; g < grids_.size(); g++)
                 prevNodePos_[g] = Eigen::Matrix3Xd(grids_[g].pos);
 
             for(const FixedNodeConstr& f : fixCs_)
-                maxDelta = std::max(maxDelta, f.resolve());
+                maxDelta = std::max(maxDelta, f.resolve(grids_));
             
             if(edgeSim_)
                 for(const EdgeLenConstr& e : edgeLenCs_)
-                    maxDelta = std::max(maxDelta, e.resolve());
+                    maxDelta = std::max(maxDelta, e.resolve(grids_));
 
             if(simScissors_)
                 for(const ScissorConstr& s : scissorCs_)
-                    maxDelta = std::max(maxDelta, s.resolve());
+                    maxDelta = std::max(maxDelta, s.resolve(grids_));
 
             if(simCollision_)
                 for(const SphereCollConstr& s : sphereCollCs_)
-                    maxDelta = std::max(maxDelta, s.resolve());
+                    maxDelta = std::max(maxDelta, s.resolve(grids_));
 
             simMaxDeltas_.push_back(maxDelta);
 
-            for(int g = 0; g < N_GRIDS; g++)
+            for(int g = 0; g < grids_.size(); g++)
                 for(int n = 0; n < grids_[g].getNNodes(); n++)
                     sse += (prevNodePos_[g].col(n) - grids_[g].pos.col(n)).squaredNorm();
             simSserrs_.push_back(sse);
@@ -418,7 +416,7 @@ private:
                 if(sse > prevSse)
                 {
                     frmwrk::Debug::logWarning("SSE increased: reversing, adjusting abs tol, stopping");
-                    for(int g = 0; g < N_GRIDS; g++)
+                    for(int g = 0; g < grids_.size(); g++)
                         grids_[g].pos = Eigen::Matrix3Xd(prevNodePos_[g]);
                     stop = true;
                     playSim_ = false;
@@ -445,7 +443,7 @@ private:
 
     void cut()
     {
-        for(int g = 0; g < N_GRIDS; g++)
+        for(int g = 0; g < grids_.size(); g++)
         {
             Grid& grid = grids_[g];
             
@@ -468,7 +466,7 @@ private:
                 nodeIndexMap[n] = newNodes.size() - 1;
             }
             
-            fixCs_[g] = FixedNodeConstr(&grids_[g]);
+            fixCs_[g] = FixedNodeConstr(g);
 
             for(int e = 0; e < grid.getNEdges(); e++)
             {
@@ -531,15 +529,15 @@ private:
                 newEdgesMatrix.col(e) = newEdges[e];
 
             grids_[g] = Grid(newNodeMatrix, newEdgesMatrix);
-            edgeLenCs_[g] = EdgeLenConstr(&grids_[g], newEdgeLengths);
+            edgeLenCs_[g] = EdgeLenConstr(grids_, g, newEdgeLengths);
         }
     }
 
     int addScissorC()
     {
         int nAdded = 0;
-        for(int gA = 0; gA < N_GRIDS-1; gA++)
-            for(int gB = gA+1; gB < N_GRIDS; gB++)
+        for(int gA = 0; gA < grids_.size()-1; gA++)
+            for(int gB = gA+1; gB < grids_.size(); gB++)
                 for(int eA = 0; eA < grids_[gA].getNEdges(); eA++)
                     for(int eB = 0; eB < grids_[gB].getNEdges(); eB++)
                     {
@@ -548,8 +546,9 @@ private:
                         int nodeB0Indx = grids_[gB].edge(eB)[0];
                         int nodeB1Indx = grids_[gB].edge(eB)[1];
                         
-                        ScissorConstr s = ScissorConstr(&grids_[gA], nodeA0Indx, nodeA1Indx,
-                                                        &grids_[gB], nodeB0Indx, nodeB1Indx);
+                        ScissorConstr s = ScissorConstr(grids_,
+                                                        gA, nodeA0Indx, nodeA1Indx,
+                                                        gB, nodeB0Indx, nodeB1Indx);
 
                         if(s.getDist() > SIM_SCISSOR_EE_MIN_DIST ||
                            std::abs(s.getAlpha() - 0.5) > (0.5 - SIM_SCISSOR_CN_MIN_DIST) ||
@@ -557,11 +556,11 @@ private:
                             continue;
 
 
-                        Eigen::Vector3d crossPoint = (s.getCrossPointA() + s.getCrossPointB()) / 2;
+                        Eigen::Vector3d crossPoint = (s.getCrossPointA(grids_) + s.getCrossPointB(grids_)) / 2;
                         bool acceptable = true;
                         for(const ScissorConstr& otherS : scissorCs_)
                         {
-                            Eigen::Vector3d otherCrossPoint = (otherS.getCrossPointA() + otherS.getCrossPointB()) / 2;
+                            Eigen::Vector3d otherCrossPoint = (otherS.getCrossPointA(grids_) + otherS.getCrossPointB(grids_)) / 2;
                             if((crossPoint - otherCrossPoint).norm() < SIM_SCISSOR_CC_MIN_DIST)
                             {
                                 acceptable = false;

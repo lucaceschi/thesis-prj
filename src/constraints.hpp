@@ -3,6 +3,7 @@
 
 #include "grid.hpp"
 #include "param_distance3.hpp"
+#include "framework/debug.hpp"
 
 #include <unordered_map>
 #include <Eigen/Dense>
@@ -11,36 +12,37 @@
 class HardConstraint
 {
 public:
-    virtual double resolve() const = 0;
+    virtual double resolve(std::vector<Grid>& grids) const = 0;
 };
 
 
 class EdgeLenConstr : public HardConstraint
 {
 public:
-    EdgeLenConstr(Grid* grid, double length)
-        : grid_(grid),
-          lens_(grid->getNEdges(), length)
+    EdgeLenConstr(std::vector<Grid>& grids, int gridIdx, double length)
+        : gridIdx_(gridIdx),
+          lens_(grids[gridIdx].getNEdges(), length)
     {}
 
-    EdgeLenConstr(Grid* grid, std::vector<double> lengths)
-        : grid_(grid),
+    EdgeLenConstr(std::vector<Grid>& grids, int gridIdx, std::vector<double> lengths)
+        : gridIdx_(gridIdx),
           lens_(lengths)
     {}
 
-    virtual double resolve() const
+    virtual double resolve(std::vector<Grid>& grids) const
     {
+        Grid& g = grids[gridIdx_];
         double maxDelta = 0.0;
         
-        for(int e = 0; e < grid_->getNEdges(); e++)
+        for(int e = 0; e < g.getNEdges(); e++)
         {
-            Eigen::Vector3d v = grid_->nodePos(grid_->edge(e)[0]) - grid_->nodePos(grid_->edge(e)[1]);
+            Eigen::Vector3d v = g.nodePos(g.edge(e)[0]) - g.nodePos(g.edge(e)[1]);
             double dist = v.norm();
             v.normalize();
             double delta = (lens_[e] - dist) / 2.0;
 
-            grid_->nodePos(grid_->edge(e)[0]) += delta * v;
-            grid_->nodePos(grid_->edge(e)[1]) -= delta * v;
+            g.nodePos(g.edge(e)[0]) += delta * v;
+            g.nodePos(g.edge(e)[1]) -= delta * v;
 
             maxDelta = std::max(maxDelta, std::abs(delta));
         }
@@ -51,7 +53,7 @@ public:
     double getLength(int e) const { return lens_[e]; }
 
 private:
-    Grid* grid_;
+    int gridIdx_;
     std::vector<double> lens_;
 };
 
@@ -59,37 +61,38 @@ private:
 class SphereCollConstr : public HardConstraint
 {
 public:
-    SphereCollConstr(Grid* grid, Eigen::Vector3d centerPos, double radius)
-        : grid_(grid),
+    SphereCollConstr(int gridIdx, Eigen::Vector3d centerPos, double radius)
+        : gridIdx_(gridIdx),
           centerPos_(centerPos),
           radius_(radius)
     {}
 
-    virtual double resolve() const
+    virtual double resolve(std::vector<Grid>& grids) const
     {
+        Grid& g = grids[gridIdx_];
         double currDist, currDelta, maxDelta = 0;
         
-        for(int n = 0; n < grid_->getNNodes(); n++)
+        for(int n = 0; n < g.getNNodes(); n++)
         {            
-            currDist = (grid_->nodePos(n) - centerPos_).norm();
+            currDist = (g.nodePos(n) - centerPos_).norm();
             currDelta = radius_ - currDist; 
             if(currDelta > 0)
             {
                 maxDelta = std::max(maxDelta, currDelta);
                 
-                if((grid_->nodePos(n) - centerPos_).isZero())
-                    grid_->nodePos(n) += Eigen::Vector3d{0, radius_, 0};
+                if((g.nodePos(n) - centerPos_).isZero())
+                    g.nodePos(n) += Eigen::Vector3d{0, radius_, 0};
                 else
-                    grid_->nodePos(n) = (grid_->nodePos(n) - centerPos_) * (radius_ / currDist) + centerPos_;
+                    g.nodePos(n) = (g.nodePos(n) - centerPos_) * (radius_ / currDist) + centerPos_;
             }
         }
 
         return maxDelta;
     }
 
-    Eigen::Vector3d centerPos_;
 private:
-    Grid* grid_;
+    Eigen::Vector3d centerPos_;
+    int gridIdx_;
     double radius_;
 };
 
@@ -97,49 +100,50 @@ private:
 class FixedNodeConstr : public HardConstraint
 {    
 public:
-    FixedNodeConstr(Grid* grid)
-        : grid_(grid)
+    FixedNodeConstr(int gridIdx)
+        : gridIdx_(gridIdx)
     {}
 
-    void fixNode(int nodeIndx, Eigen::Vector3d pos)
+    void fixNode(int nodeIdx, Eigen::Vector3d pos)
     {
-        fixedPos_[nodeIndx] = pos;
+        fixedPos_[nodeIdx] = pos;
     }
 
-    void fixNode(int nodeIndx)
+    void fixNode(std::vector<Grid>& grids, int nodeIdx)
     {
-        fixNode(nodeIndx, grid_->nodePos(nodeIndx));
+        fixNode(nodeIdx, grids[gridIdx_].nodePos(nodeIdx));
     }
 
-    void freeNode(int nodeIndx)
+    void freeNode(int nodeIdx)
     {
         typedef std::unordered_map<int, Eigen::Vector3d>::iterator Iterator;
-        Iterator it = fixedPos_.find(nodeIndx);
+        Iterator it = fixedPos_.find(nodeIdx);
         if(it != fixedPos_.end())
             fixedPos_.erase(it);
     }
 
-    bool isNodeFixed(int nodeIndx) const
+    bool isNodeFixed(int nodeIdx) const
     {
-        return fixedPos_.find(nodeIndx) != fixedPos_.cend();
+        return fixedPos_.find(nodeIdx) != fixedPos_.cend();
     }
 
-    virtual double resolve() const
+    virtual double resolve(std::vector<Grid>& grids) const
     {
         typedef std::unordered_map<int, Eigen::Vector3d>::const_iterator CIterator;
+        Grid& g = grids[gridIdx_];
 
         double maxDelta = 0;
         for(CIterator it = fixedPos_.cbegin(); it != fixedPos_.cend(); it++)
         {
-            maxDelta = std::max(maxDelta, (grid_->nodePos(it->first) - it->second).squaredNorm());
-            grid_->nodePos(it->first) = it->second;
+            maxDelta = std::max(maxDelta, (g.nodePos(it->first) - it->second).squaredNorm());
+            g.nodePos(it->first) = it->second;
         }
 
         return maxDelta;
     }
 
 private:
-    Grid* grid_;
+    int gridIdx_;
     std::unordered_map<int, Eigen::Vector3d> fixedPos_;
 };
 
@@ -147,23 +151,27 @@ private:
 class ScissorConstr : public HardConstraint
 {
 public:
-    ScissorConstr(Grid* gridA, int nodeA0Indx, int nodeA1Indx,
-                  Grid* gridB, int nodeB0Indx, int nodeB1Indx)
-        : gridA_(gridA),
-          nodeA0Indx_(nodeA0Indx),
-          nodeA1Indx_(nodeA1Indx),
-          gridB_(gridB),
-          nodeB0Indx_(nodeB0Indx),
-          nodeB1Indx_(nodeB1Indx)
+    ScissorConstr(std::vector<Grid>& grids,
+                  int gridAIdx, int nodeA0Idx, int nodeA1Idx,
+                  int gridBIdx, int nodeB0Idx, int nodeB1Idx)
+        : gridAIdx_(gridAIdx),
+          nodeA0Idx_(nodeA0Idx),
+          nodeA1Idx_(nodeA1Idx),
+          gridBIdx_(gridBIdx),
+          nodeB0Idx_(nodeB0Idx),
+          nodeB1Idx_(nodeB1Idx)
     {
+        Grid& gridA = grids[gridAIdx];
+        Grid& gridB = grids[gridBIdx];
+        
         vcg::Segment3d segA = vcg::Segment3d(
-            vcg::Point3d(gridA->nodePos(nodeA0Indx).data()),
-            vcg::Point3d(gridA->nodePos(nodeA1Indx).data())
+            vcg::Point3d(gridA.nodePos(nodeA0Idx).data()),
+            vcg::Point3d(gridA.nodePos(nodeA1Idx).data())
         );
 
         vcg::Segment3d segB = vcg::Segment3d(
-            vcg::Point3d(gridB->nodePos(nodeB0Indx).data()),
-            vcg::Point3d(gridB->nodePos(nodeB1Indx).data())
+            vcg::Point3d(gridB.nodePos(nodeB0Idx).data()),
+            vcg::Point3d(gridB.nodePos(nodeB1Idx).data())
         );
 
         bool parallel;
@@ -176,9 +184,12 @@ public:
             frmwrk::Debug::logWarning("Found parallel edges while adding a new scissor constraint");
     }
 
-    virtual double resolve() const
+    virtual double resolve(std::vector<Grid>& grids) const
     {
-        Eigen::Vector3d shiftDir = getCrossPointB() - getCrossPointA();
+        Grid& gridA = grids[gridAIdx_];
+        Grid& gridB = grids[gridBIdx_];
+        
+        Eigen::Vector3d shiftDir = getCrossPointB(grids) - getCrossPointA(grids);
         double delta = shiftDir.norm(); //(shiftDir.norm() - dist_);
         double deltaA = delta * omegaB_ / (omegaA_ + omegaB_);
         double deltaB = delta * omegaA_ / (omegaA_ + omegaB_);
@@ -188,40 +199,42 @@ public:
         double deltaB1 = deltaB * (beta_)      * omegaB_;
         shiftDir.normalize();
 
-        gridA_->nodePos(nodeA0Indx_) += deltaA0 * shiftDir;
-        gridA_->nodePos(nodeA1Indx_) += deltaA1 * shiftDir;
-        gridB_->nodePos(nodeB0Indx_) -= deltaB0 * shiftDir;
-        gridB_->nodePos(nodeB1Indx_) -= deltaB1 * shiftDir;
+        gridA.nodePos(nodeA0Idx_) += deltaA0 * shiftDir;
+        gridA.nodePos(nodeA1Idx_) += deltaA1 * shiftDir;
+        gridB.nodePos(nodeB0Idx_) -= deltaB0 * shiftDir;
+        gridB.nodePos(nodeB1Idx_) -= deltaB1 * shiftDir;
 
         return std::max({std::abs(deltaA0), std::abs(deltaA1), std::abs(deltaB0), std::abs(deltaB1)});
     }
 
-    Grid* getGridA() const { return gridA_; }
-    Grid* getGridB() const { return gridB_; }
-    int getNodeA0Indx() const { return nodeA0Indx_; }
-    int getNodeA1Indx() const { return nodeA1Indx_; }
-    int getNodeB0Indx() const { return nodeB0Indx_; }
-    int getNodeB1Indx() const { return nodeB1Indx_; }
+    int getGridAIdx()  const { return gridAIdx_; }
+    int getGridBIdx()  const { return gridBIdx_; }
+    int getNodeA0Idx() const { return nodeA0Idx_; }
+    int getNodeA1Idx() const { return nodeA1Idx_; }
+    int getNodeB0Idx() const { return nodeB0Idx_; }
+    int getNodeB1Idx() const { return nodeB1Idx_; }
     double getDist() const { return dist_; }
     double getAlpha() const { return alpha_; }
     double getBeta() const { return beta_; }
 
-    inline Eigen::Vector3d getCrossPointA() const
+    inline Eigen::Vector3d getCrossPointA(std::vector<Grid>& grids) const
     {
-        return gridA_->nodePos(nodeA0Indx_) * (1 - alpha_) + gridA_->nodePos(nodeA1Indx_) * alpha_;
+        Grid& gridA = grids[gridAIdx_];
+        return gridA.nodePos(nodeA0Idx_) * (1 - alpha_) + gridA.nodePos(nodeA1Idx_) * alpha_;
     }
 
-    inline Eigen::Vector3d getCrossPointB() const
+    inline Eigen::Vector3d getCrossPointB(std::vector<Grid>& grids) const
     {
-        return gridB_->nodePos(nodeB0Indx_) * (1 - beta_) + gridB_->nodePos(nodeB1Indx_) * beta_;
+        Grid& gridB = grids[gridBIdx_];
+        return gridB.nodePos(nodeB0Idx_) * (1 - beta_) + gridB.nodePos(nodeB1Idx_) * beta_;
     }
 
 private:
-    Grid* gridA_;
-    int nodeA0Indx_, nodeA1Indx_;
+    int gridAIdx_;
+    int nodeA0Idx_, nodeA1Idx_;
     double alpha_, omegaA_;
-    Grid* gridB_;
-    int nodeB0Indx_, nodeB1Indx_;
+    int gridBIdx_;
+    int nodeB0Idx_, nodeB1Idx_;
     double beta_, omegaB_;
     double dist_;
 };
