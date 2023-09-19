@@ -259,6 +259,7 @@ private:
 
         for(int g = 0; g < grids_.size(); g++)
             drawGridRender(g, (g == 0));
+        trackball_.DrawPostApply();
 
         return true;
     }
@@ -319,8 +320,6 @@ private:
             glVertex3d(cpB(0), cpB(1), cpB(2));
         }
         glEnd();
-
-        trackball_.DrawPostApply();
     }
 
     void drawGridPick(int gridIdx)
