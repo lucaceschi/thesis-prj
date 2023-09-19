@@ -36,12 +36,19 @@ struct Pick
     GLfloat depth;
 };
 
+enum ViewPoint
+{
+    TOP,
+    FRONT,
+    RIGHT
+};
+
 
 class MainApp : public frmwrk::App
 {
 public:
     MainApp()
-        : App("Boundary actuation", Eigen::Vector2i{1000, 800}, true),
+        : App("Boundary actuation", Eigen::Vector2i{1200, 800}, true),
           grids_{
               Grid({0, 0.6, 0}, 8, 8, {1, 0, 0}, {0, 0, 1},  0.2),
               Grid({0, 0.5, 0}, 8, 8, {1, 0, 1}, {-1, 0, 1}, 0.2)
@@ -64,6 +71,8 @@ public:
           },
           bgColorRender_{0xff, 0xff, 0xff},
           bgColorPicking_{0x00, 0x00, 0xff},
+          orthoCamera_(false),
+          viewPoint_(ViewPoint::FRONT),
           playSim_(false),
           absTolSim_(SIM_TOL_ABS),
           doNStepsSim_(1),
@@ -88,6 +97,8 @@ private:
     Pick pick_;
 
     vcg::Trackball trackball_;
+    bool orthoCamera_;
+    ViewPoint viewPoint_;
 
     bool playSim_;
     float absTolSim_;
@@ -111,15 +122,38 @@ private:
     }
 
 
+    void setViewpoint(ViewPoint newViewpoint)
+    {
+        viewPoint_ = newViewpoint;
+        trackball_.Reset();
+    }
+
+
     virtual bool mainLoop(double deltaTime)
     {        
         glMatrixMode(GL_PROJECTION);
         glLoadIdentity();
-        gluPerspective(40, (GLdouble)getFramebufferSize()(0)/getFramebufferSize()(1), 0.1, 100);
+        GLfloat framebufferRatio = (GLfloat)getFramebufferSize()(0)/getFramebufferSize()(1);
+        if(orthoCamera_)
+            glOrtho(-1.25 * framebufferRatio, 1.25 * framebufferRatio, -1.25, 1.25, -10, 10);
+        else
+            gluPerspective(40, framebufferRatio, 0.1, 100);
         
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
-        gluLookAt(0,4,0,   0,0,0,   0,0,-1);
+        switch(viewPoint_)
+        {
+            case ViewPoint::TOP:
+                gluLookAt(0,4,0,   0,0,0,   0,0,1);
+                break;
+            case ViewPoint::RIGHT:
+                gluLookAt(4,0,0,   0,0,0,   0,1,0);
+                break;
+            case ViewPoint::FRONT:
+            default:
+                gluLookAt(0,0,-4,  0,0,0,   0,1,0);
+                break;
+        }
         trackball_.GetView();
         trackball_.Apply();
 
@@ -223,6 +257,23 @@ private:
 
         if(input_.isKeyPressed(GLFW_KEY_SPACE))
             playSim_ = !playSim_; 
+
+        if(ImGui::BeginMainMenuBar())
+        {
+            if(ImGui::BeginMenu("Camera"))
+            {
+                ImGui::MenuItem("Ortho proj", NULL, &orthoCamera_);
+                ImGui::Separator();
+                if(ImGui::MenuItem("Top viewpoint"))
+                    setViewpoint(ViewPoint::TOP);
+                if(ImGui::MenuItem("Front viewpoint"))
+                    setViewpoint(ViewPoint::FRONT);
+                if(ImGui::MenuItem("Right viewpoint"))
+                    setViewpoint(ViewPoint::RIGHT);
+                ImGui::EndMenu();
+            }
+            ImGui::EndMainMenuBar();
+        }
 
         ImGui::Begin("Sim");
         ImGui::Text("N iters: %i", simIters_);
