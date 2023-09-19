@@ -493,6 +493,8 @@ private:
 
     void cut()
     {
+        std::vector<std::unordered_map<int, int>> edgeIndexMaps(grids_.size());
+        
         for(int g = 0; g < grids_.size(); g++)
         {
             Grid& grid = grids_[g];
@@ -567,6 +569,7 @@ private:
                 }
 
                 newEdges.emplace_back(p1Index, p2Index);
+                edgeIndexMaps[g][e] = newEdges.size() - 1;
                 newEdgeLengths.push_back(edgeLength);
             }
 
@@ -581,6 +584,20 @@ private:
             grids_[g] = Grid(newNodeMatrix, newEdgesMatrix);
             edgeLenCs_[g] = EdgeLenConstr(grids_, g, newEdgeLengths);
         }
+
+        // recreate scissor constraints
+        // WARN: exact parametric positions of each scissor are not preserved
+        std::vector<ScissorConstr> newScissors;
+        for(const ScissorConstr& s : scissorCs_)
+        {
+            std::unordered_map<int, int>::iterator edgeAIt = edgeIndexMaps[s.getGridAIdx()].find(s.getEdgeAIdx());
+            std::unordered_map<int, int>::iterator edgeBIt = edgeIndexMaps[s.getGridBIdx()].find(s.getEdgeBIdx());
+
+            if(edgeAIt != edgeIndexMaps[s.getGridAIdx()].end() &&
+               edgeBIt != edgeIndexMaps[s.getGridBIdx()].end())
+                newScissors.emplace_back(grids_, s.getGridAIdx(), edgeAIt->second, s.getGridBIdx(), edgeBIt->second);
+        }
+        scissorCs_.swap(newScissors);
     }
 
     int addScissorC()
