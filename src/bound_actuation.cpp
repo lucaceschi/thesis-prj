@@ -178,9 +178,13 @@ private:
 
                     if(pickedNodeIdx != -1 && input_.isMouseButtonPressed(GLFW_MOUSE_BUTTON_RIGHT))
                     {
-                        vcg::Point3f pickedNodePos;
-                        pickedNodePos.FromEigenVector(grids_[g].nodePos(pickedNodeIdx));
-                        trackball_.Translate(vcg::Point3f(1, 0, 0));
+                        //vcg::Point3f pickedNodePos;
+                        //pickedNodePos.FromEigenVector(grids_[g].nodePos(pickedNodeIdx));
+                        //trackball_.Translate(vcg::Point3f(1, 0, 0));
+                        if(!fixCs_[g].isNodeFixed(pickedNodeIdx))
+                            fixCs_[g].fixNode(grids_, pickedNodeIdx);
+                        else
+                            fixCs_[g].freeNode(pickedNodeIdx);
                         break;
                     }
                     else if(pickedNodeIdx != -1 && input_.isMouseButtonPressed(GLFW_MOUSE_BUTTON_LEFT))
@@ -505,6 +509,7 @@ private:
             std::unordered_map<int, int> nodeIndexMap;
             std::vector<Eigen::Array2i> newEdges;
             std::vector<double> newEdgeLengths;
+            FixedNodeConstr newFixCs_(g);
 
             for(int n = 0; n < grid.getNNodes(); n++)
             {
@@ -517,8 +522,6 @@ private:
                 newNodes.push_back(p);
                 nodeIndexMap[n] = newNodes.size() - 1;
             }
-            
-            fixCs_[g] = FixedNodeConstr(g);
 
             for(int e = 0; e < grid.getNEdges(); e++)
             {
@@ -565,7 +568,7 @@ private:
                     newNodePos -= (deltaLength * edgeVec);
                     edgeLength = edgeLenCs_[g].getLength(e) - abs(deltaLength);
                     newNodes.push_back(newNodePos);
-                    fixCs_[g].fixNode(newNodes.size() - 1, newNodePos);
+                    newFixCs_.fixNode(newNodes.size() - 1, newNodePos);
                 }
 
                 newEdges.emplace_back(p1Index, p2Index);
@@ -582,7 +585,16 @@ private:
                 newEdgesMatrix.col(e) = newEdges[e];
 
             grids_[g] = Grid(newNodeMatrix, newEdgesMatrix);
+
             edgeLenCs_[g] = EdgeLenConstr(grids_, g, newEdgeLengths);
+
+            for(FixedNodeConstr::const_iterator it = fixCs_[g].cbegin(); it != fixCs_[g].cend(); it++)
+            {
+                auto newIndex = nodeIndexMap.find(it->first);
+                if(newIndex != nodeIndexMap.end())
+                    newFixCs_.fixNode(grids_, newIndex->second);
+            }
+            fixCs_[g] = newFixCs_;
         }
 
         // recreate scissor constraints

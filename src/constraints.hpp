@@ -142,6 +142,16 @@ public:
         return maxDelta;
     }
 
+    typedef std::unordered_map<int, Eigen::Vector3d>::const_iterator const_iterator;
+    const_iterator cbegin() const
+    {
+        return fixedPos_.cbegin();
+    }
+    const_iterator cend() const 
+    {
+        return fixedPos_.cend();
+    }
+
 private:
     int gridIdx_;
     std::unordered_map<int, Eigen::Vector3d> fixedPos_;
