@@ -97,6 +97,40 @@ private:
 };
 
 
+class PlaneCollConstr : public HardConstraint
+{
+public:
+    PlaneCollConstr(int gridIdx, Eigen::Vector3d origin, Eigen::Vector3d normal)
+        : gridIdx_(gridIdx),
+          origin_(origin),
+          normal_(normal.normalized())
+    {}
+
+    virtual double resolve(std::vector<Grid>& grids) const
+    {
+        Grid& g = grids[gridIdx_];
+        double currDelta, maxDelta = 0;
+
+        for(int n = 0; n < g.getNNodes(); n++)
+        {
+            currDelta = (origin_ - g.nodePos(n)).dot(normal_);
+            
+            if(currDelta > 0)
+            {
+                g.nodePos(n) += (currDelta * normal_);
+                maxDelta = std::max(maxDelta, currDelta);
+            }
+        }
+
+        return maxDelta;
+    }
+
+private:
+    int gridIdx_;
+    Eigen::Vector3d origin_, normal_;
+};
+
+
 class FixedNodeConstr : public HardConstraint
 {    
 public:
