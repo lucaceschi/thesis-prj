@@ -257,16 +257,40 @@ private:
                 trackball_.ButtonDown(vcg::Trackball::KEY_ALT);
             if (input_.isKeyReleased(GLFW_KEY_LEFT_ALT))
                 trackball_.ButtonUp(vcg::Trackball::KEY_ALT);
-        }
 
-        if(input_.isKeyPressed(GLFW_KEY_SPACE))
-            playSim_ = !playSim_; 
+            if(input_.isKeyPressed(GLFW_KEY_SPACE))
+                playSim_ = !playSim_; 
+        }
 
         if(ImGui::BeginMainMenuBar())
         {
+            ImGuiID exportPopupId = ImGui::GetID("export_grids_popup");
+            if(ImGui::BeginPopup("export_grids_popup"))
+            {
+                ImGui::SeparatorText("Export grids");
+                static char filename[20] = "";
+                bool pressedEnter = ImGui::InputTextWithHint("", "base file name", filename, 64, ImGuiInputTextFlags_EnterReturnsTrue);
+                ImGui::SameLine();
+                if(pressedEnter || ImGui::Button("Export"))
+                {
+                    for(int g = 0; g < grids_.size(); g++)
+                        grids_[g].exportPly(std::string(filename) + "_" + std::to_string(g) + ".ply");
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
+            }
+            
+            if(ImGui::BeginMenu("File"))
+            {
+                if(ImGui::MenuItem("Export grids"))
+                {
+                    ImGui::OpenPopup(exportPopupId);
+                }
+                ImGui::EndMenu();
+            }
             if(ImGui::BeginMenu("Camera"))
             {
-                ImGui::MenuItem("Ortho proj", NULL, &orthoCamera_);
+                ImGui::MenuItem("Ortho proj", nullptr, &orthoCamera_);
                 ImGui::Separator();
                 if(ImGui::MenuItem("Top viewpoint"))
                     setViewpoint(ViewPoint::TOP);
