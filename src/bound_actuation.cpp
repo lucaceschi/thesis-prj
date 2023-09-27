@@ -89,6 +89,7 @@ private:
     std::vector<std::array<GLubyte, 3>> gridColors_;
     std::vector<EdgeLenConstr> edgeLenCs_;
     std::vector<SphereCollConstr> sphereCollCs_;
+    std::vector<PlaneCollConstr> planeCollCs_;
     std::vector<FixedNodeConstr> fixCs_;
     std::vector<ScissorConstr> scissorCs_;
 
@@ -476,8 +477,12 @@ private:
                     maxDelta = std::max(maxDelta, s.resolve(grids_));
 
             if(simCollision_)
+            {
                 for(const SphereCollConstr& s : sphereCollCs_)
                     maxDelta = std::max(maxDelta, s.resolve(grids_));
+                for(const PlaneCollConstr& p : planeCollCs_)
+                        maxDelta = std::max(maxDelta, p.resolve(grids_));
+            }
 
             simMaxDeltas_.push_back(maxDelta);
 
