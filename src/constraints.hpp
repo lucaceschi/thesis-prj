@@ -7,6 +7,8 @@
 
 #include <unordered_map>
 #include <Eigen/Dense>
+#include <vcg/complex/complex.h>
+#include <wrap/io_trimesh/import.h>
 
 
 class HardConstraint
@@ -128,6 +130,51 @@ public:
 private:
     int gridIdx_;
     Eigen::Vector3d origin_, normal_;
+};
+
+
+class MeshCollConstr : public HardConstraint
+{
+public:
+    MeshCollConstr(int gridIdx, std::string meshPath)
+        : gridIdx_(gridIdx)
+    {
+        using Importer = vcg::tri::io::Importer<Mesh_>;
+        int loadErr, loadMask;
+        
+        loadErr = Importer::Open(mesh_, meshPath.c_str(), loadMask);
+
+        if(Importer::ErrorCritical(loadErr))
+            frmwrk::Debug::log("Loading mesh %s: %s", meshPath.c_str(), Importer::ErrorMsg(loadErr));
+        else if(loadErr != 0)
+            frmwrk::Debug::logWarning("Loading mesh %s: %s", meshPath.c_str(), Importer::ErrorMsg(loadErr));
+        else
+        {
+            if((loadMask & vcg::tri::io::Mask::IOM_FACENORMAL) == 0)
+                vcg::tri::UpdateNormal<Mesh_>::PerFaceNormalized(mesh_);
+        }
+    }
+
+    virtual double resolve()
+    {
+        
+    }
+
+private:
+    class Vertex_;
+    class Face_;
+    struct MeshUsedTypes_ : public vcg::UsedTypes<vcg::Use<Vertex_>::AsVertexType,
+                                                  vcg::Use<Face_>::AsFaceType> {};
+    class Vertex_ : public vcg::Vertex<MeshUsedTypes_,
+                                       vcg::vertex::Coord3d> {};
+    class Face_ : public vcg::Face<MeshUsedTypes_,
+                                   vcg::face::VertexRef,
+                                   vcg::face::Normal3d> {};
+    class Mesh_ : public vcg::tri::TriMesh<std::vector<Vertex_>,
+                                           std::vector<Face_>> {};
+
+    int gridIdx_;
+    Mesh_ mesh_;
 };
 
 
