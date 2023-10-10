@@ -14,10 +14,11 @@
 
 
 #define MAX_GRID_COLS 10
+#define INIT_GRID_EDGE_LEN 0.2
 
 #define SIM_GRAV_SHIFT 5e-3
-#define SIM_TOL_ABS 1e-10
-#define SIM_TOL_REL 1e-5
+#define SIM_INIT_ABS_TOL 1e-10
+#define SIM_INIT_REL_TOL 2.22e-16
 #define SIM_MAX_ITERS 100000
 #define SIM_SCISSOR_EE_MIN_DIST 1e-3
 #define SIM_SCISSOR_CC_MIN_DIST 1e-2
@@ -54,8 +55,8 @@ public:
               Grid({0, 0.5, 0}, 8, 8, {1, 0, 1}, {-1, 0, 1}, 0.2)
           },
           edgeLenCs_{
-              EdgeLenConstr(grids_, 0, 0.2),
-              EdgeLenConstr(grids_, 1, 0.2)
+              EdgeLenConstr(grids_, 0, INIT_GRID_EDGE_LEN),
+              EdgeLenConstr(grids_, 1, INIT_GRID_EDGE_LEN)
           },
           sphereCollCs_{
               SphereCollConstr(0, Eigen::Vector3d{0, 0, 0}, 0.5),
@@ -74,7 +75,10 @@ public:
           orthoCamera_(false),
           viewPoint_(ViewPoint::FRONT),
           playSim_(false),
-          absTolSim_(SIM_TOL_ABS),
+          absTolSimSlider_(SIM_INIT_ABS_TOL),
+          absTolSim_(SIM_INIT_ABS_TOL * INIT_GRID_EDGE_LEN),
+          relTolSimSlider_(SIM_INIT_REL_TOL),
+          relTolSim_(SIM_INIT_REL_TOL * INIT_GRID_EDGE_LEN),
           doNStepsSim_(1),
           gravSim_(true),
           edgeSim_(true),
@@ -102,7 +106,8 @@ private:
     ViewPoint viewPoint_;
 
     bool playSim_;
-    float absTolSim_;
+    float absTolSim_, absTolSimSlider_;
+    float relTolSim_, relTolSimSlider_;
     int doNStepsSim_;
     bool gravSim_;
     bool edgeSim_;
@@ -110,7 +115,7 @@ private:
     bool simScissors_;
     bool addScissors_;
     int simIters_;
-    std::vector<float> simSserrs_;
+    std::vector<float> simTotDispls;
     std::vector<float> simMaxDeltas_;
     std::vector<Eigen::Matrix3Xd> prevNodePos_;
 
@@ -306,9 +311,13 @@ private:
 
         ImGui::Begin("Sim");
         ImGui::Text("N iters: %i", simIters_);
-        ImGui::PlotLines("SSE", simSserrs_.data(), simSserrs_.size(), 0, nullptr, FLT_MAX, FLT_MAX, {200, 30});
+        ImGui::PlotLines("Tot displ", simTotDispls.data(), simTotDispls.size(), 0, nullptr, FLT_MAX, FLT_MAX, {200, 30});
         ImGui::PlotLines("Max delta", simMaxDeltas_.data(), simMaxDeltas_.size(), 0, nullptr, FLT_MAX, FLT_MAX, {200, 30});
-        ImGui::DragFloat("SSE tol", &absTolSim_, 1e-2, 0.1, 1e-12, "%.5e");
+        ImGui::DragFloat("Abs tol", &absTolSimSlider_, 1e-2, 0.1, 1e-18, "%.2e");
+        ImGui::DragFloat("Rel tol", &relTolSimSlider_, 1e-2, 0.1, 1e-18, "%.2e");
+        absTolSim_ = absTolSimSlider_ * INIT_GRID_EDGE_LEN;
+        relTolSim_ = relTolSimSlider_ * INIT_GRID_EDGE_LEN;
+        
         ImGui::Checkbox("Play sim", &playSim_);
         if(ImGui::Button("Do full iteration"))
             simIters_ = simGrids();
@@ -452,15 +461,13 @@ private:
         
         bool stop = false;
         int nIters = 0;
-        double prevSse = std::numeric_limits<double>::infinity();
-        double sse;
+        double totDisplacement, totPrevNorm;
         double maxDelta;
 
-        simSserrs_.clear();
+        simTotDispls.clear();
         simMaxDeltas_.clear();
         while(!stop)
         {
-            sse = 0;
             maxDelta = 0;
             for(int g = 0; g < grids_.size(); g++)
                 prevNodePos_[g] = Eigen::Matrix3Xd(grids_[g].pos);
@@ -486,25 +493,18 @@ private:
 
             simMaxDeltas_.push_back(maxDelta);
 
+            totDisplacement = totPrevNorm = 0;
             for(int g = 0; g < grids_.size(); g++)
-                for(int n = 0; n < grids_[g].getNNodes(); n++)
-                    sse += (prevNodePos_[g].col(n) - grids_[g].pos.col(n)).squaredNorm();
-            simSserrs_.push_back(sse);
+            {
+                totDisplacement += (prevNodePos_[g] - grids_[g].pos).squaredNorm();
+                totPrevNorm += prevNodePos_[g].squaredNorm();
+            }
+            simTotDispls.push_back(totDisplacement);
 
             if(doNIters == std::numeric_limits<int>::max())
             {
-                if(sse < absTolSim_ || (prevSse - sse) / sse < SIM_TOL_REL)
+                if(totDisplacement <= absTolSim_ + totPrevNorm * relTolSim_)
                     stop = true;
-
-                if(sse > prevSse)
-                {
-                    frmwrk::Debug::logWarning("SSE increased: reversing, adjusting abs tol, stopping");
-                    for(int g = 0; g < grids_.size(); g++)
-                        grids_[g].pos = Eigen::Matrix3Xd(prevNodePos_[g]);
-                    stop = true;
-                    playSim_ = false;
-                    absTolSim_ = prevSse;
-                }
 
                 if(nIters > SIM_MAX_ITERS)
                 {
@@ -514,7 +514,6 @@ private:
                 }
             }
 
-            prevSse = sse;
             nIters++;
 
             if(nIters >= doNIters)
