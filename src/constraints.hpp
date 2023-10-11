@@ -8,6 +8,8 @@
 #include <unordered_map>
 #include <Eigen/Dense>
 
+#define SMALL_NUM 1e-16
+
 
 class HardConstraint
 {
@@ -63,27 +65,66 @@ class SphereCollConstr : public HardConstraint
 public:
     SphereCollConstr(int gridIdx, Eigen::Vector3d centerPos, double radius)
         : gridIdx_(gridIdx),
-          centerPos_(centerPos),
+          originPos_(centerPos),
           radius_(radius)
     {}
+
+    void genCollisions(std::vector<Grid>& grids, std::vector<Eigen::Matrix3Xd> prevNodePos)
+    {
+        Grid& g = grids[gridIdx_];
+        Eigen::Matrix3Xd prevPos = prevNodePos[gridIdx_];
+        
+        coll_.clear();
+
+        for(int n = 0; n < g.getNNodes(); n++)
+        {
+            Eigen::Vector3d OP = g.nodePos(n) - originPos_;
+
+            if(OP.squaredNorm() > std::pow(radius_, 2))
+                continue; // the updated position of the particle is already out of the sphere
+
+            Eigen::Vector3d V = g.nodePos(n) - prevPos.col(n);
+            double segLength = V.norm();
+            V /= segLength;
+            Eigen::Vector3d EO = originPos_ - prevPos.col(n);
+            double v = EO.dot(V);
+            double disc = std::pow(radius_, 2) - EO.squaredNorm() + std::pow(v, 2);
+            if(disc > 0)
+            {
+                double len = (v - std::sqrt(disc));
+                if(len < 0)
+                {
+                    // static collision handling
+                    Eigen::Vector3d normal = OP.normalized();
+                    coll_.emplace_back(n, originPos_ + normal * radius_, normal);
+                }
+                else
+                {
+                    // continuous collision handling
+                    Eigen::Vector3d entryPoint = prevPos.col(n) + len * V;
+                    coll_.emplace_back(n, entryPoint, (entryPoint - originPos_).normalized());
+                }
+            }
+        }
+    }
 
     virtual double resolve(std::vector<Grid>& grids) const
     {
         Grid& g = grids[gridIdx_];
+        int n;
+        Eigen::Vector3d entryPoint, normal;
         double currDist, currDelta, maxDelta = 0;
         
-        for(int n = 0; n < g.getNNodes(); n++)
-        {            
-            currDist = (g.nodePos(n) - centerPos_).norm();
-            currDelta = radius_ - currDist; 
+        for(const std::tuple<int, Eigen::Vector3d, Eigen::Vector3d>& c : coll_)
+        {
+            std::tie(n, entryPoint, normal) = c;
+            
+            currDelta = (entryPoint - g.nodePos(n)).dot(normal);
+            
             if(currDelta > 0)
             {
+                g.nodePos(n) += (currDelta * normal);
                 maxDelta = std::max(maxDelta, currDelta);
-                
-                if((g.nodePos(n) - centerPos_).isZero())
-                    g.nodePos(n) += Eigen::Vector3d{0, radius_, 0};
-                else
-                    g.nodePos(n) = (g.nodePos(n) - centerPos_) * (radius_ / currDist) + centerPos_;
             }
         }
 
@@ -91,9 +132,10 @@ public:
     }
 
 private:
-    Eigen::Vector3d centerPos_;
+    Eigen::Vector3d originPos_;
     int gridIdx_;
     double radius_;
+    std::vector<std::tuple<int, Eigen::Vector3d, Eigen::Vector3d>> coll_;
 };
 
 

@@ -59,8 +59,12 @@ public:
               EdgeLenConstr(grids_, 1, INIT_GRID_EDGE_LEN)
           },
           sphereCollCs_{
-              SphereCollConstr(0, Eigen::Vector3d{0, 0, 0}, 0.5),
-              SphereCollConstr(1, Eigen::Vector3d{0, 0, 0}, 0.5)
+              SphereCollConstr(0, Eigen::Vector3d{0.2, 0, 0}, 0.5),
+              SphereCollConstr(1, Eigen::Vector3d{0.2, 0, 0}, 0.5)
+          },
+          planeCollCs_{
+              //PlaneCollConstr(0, Eigen::Vector3d{0,0,0}, Eigen::Vector3d{0,1,0}),
+              //PlaneCollConstr(1, Eigen::Vector3d{0,0,0}, Eigen::Vector3d{0,1,0}),
           },
           fixCs_{
               FixedNodeConstr(0),
@@ -454,6 +458,9 @@ private:
 
     int simGrids(int doNIters = std::numeric_limits<int>::max())
     {
+        for(int g = 0; g < grids_.size(); g++)
+            prevNodePos_[g] = Eigen::Matrix3Xd(grids_[g].pos);
+        
         if(gravSim_)
             for(int g = 0; g < grids_.size(); g++)
                 for(int n = 0; n < grids_[g].getNNodes(); n++)
@@ -464,13 +471,15 @@ private:
         double totDisplacement, totPrevNorm;
         double maxDelta;
 
+        if(simCollision_)
+            for(SphereCollConstr& s : sphereCollCs_)
+                s.genCollisions(grids_, prevNodePos_);
+
         simTotDispls.clear();
         simMaxDeltas_.clear();
         while(!stop)
         {
             maxDelta = 0;
-            for(int g = 0; g < grids_.size(); g++)
-                prevNodePos_[g] = Eigen::Matrix3Xd(grids_[g].pos);
 
             for(const FixedNodeConstr& f : fixCs_)
                 maxDelta = std::max(maxDelta, f.resolve(grids_));
@@ -488,7 +497,7 @@ private:
                 for(const SphereCollConstr& s : sphereCollCs_)
                     maxDelta = std::max(maxDelta, s.resolve(grids_));
                 for(const PlaneCollConstr& p : planeCollCs_)
-                        maxDelta = std::max(maxDelta, p.resolve(grids_));
+                    maxDelta = std::max(maxDelta, p.resolve(grids_));
             }
 
             simMaxDeltas_.push_back(maxDelta);
@@ -518,6 +527,9 @@ private:
 
             if(nIters >= doNIters)
                 break;
+
+            for(int g = 0; g < grids_.size(); g++)
+                prevNodePos_[g] = Eigen::Matrix3Xd(grids_[g].pos);
         }
 
         return nIters;
