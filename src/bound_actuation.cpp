@@ -24,6 +24,9 @@
 #define SIM_SCISSOR_CC_MIN_DIST 1e-2
 #define SIM_SCISSOR_CN_MIN_DIST 1e-2
 
+#define DYN_SIM_DT 1e-2
+#define DYN_SIM_MAX_UPS 60
+
 
 struct Pick
 {
@@ -51,16 +54,20 @@ public:
     MainApp()
         : App("Boundary actuation", Eigen::Vector2i{1200, 800}, true),
           grids_{
-              Grid({0, 0.6, 0}, 8, 8, {1, 0, 0}, {0, 0, 1},  0.2),
-              Grid({0, 0.5, 0}, 8, 8, {1, 0, 1}, {-1, 0, 1}, 0.2)
+              Grid({0, 0.6, 0}, 4, 4, {1, 0, 0}, {0, 0, 1}, INIT_GRID_EDGE_LEN),
+              Grid({0, 0.6, 0}, 4, 4, {1, 0, 1}, {-1, 0, 1}, INIT_GRID_EDGE_LEN)
           },
           edgeLenCs_{
               EdgeLenConstr(grids_, 0, INIT_GRID_EDGE_LEN),
               EdgeLenConstr(grids_, 1, INIT_GRID_EDGE_LEN)
           },
           sphereCollCs_{
-              SphereCollConstr(0, Eigen::Vector3d{0, 0, 0}, 0.5),
-              SphereCollConstr(1, Eigen::Vector3d{0, 0, 0}, 0.5)
+              //SphereCollConstr(0, Eigen::Vector3d{0, 0, 0}, 0.5),
+              //SphereCollConstr(1, Eigen::Vector3d{0, 0, 0}, 0.5)
+          },
+          planeCollCs_{
+              PlaneCollConstr(0, Eigen::Vector3d{0, 0, 0}, Eigen::Vector3d{0, 1, 0}),
+              PlaneCollConstr(1, Eigen::Vector3d{0, 0, 0}, Eigen::Vector3d{0, 1, 0})
           },
           fixCs_{
               FixedNodeConstr(0),
@@ -117,13 +124,28 @@ private:
     int simIters_;
     std::vector<float> simTotDispls;
     std::vector<float> simMaxDeltas_;
+    std::vector<Eigen::Matrix3Xd> solverPrevNodePos_;
+
+    // dynamic sim
+    double lastUpdateElapsed_;
+    std::vector<Eigen::Matrix3Xd> nodeVel_;
     std::vector<Eigen::Matrix3Xd> prevNodePos_;
 
 
     virtual bool initApp()
     {
         glClearColor(bgColorRender_[0]/255.0, bgColorRender_[1]/255.0, bgColorRender_[2]/255.0, 1.0f);
+
+        solverPrevNodePos_.resize(grids_.size());
+        nodeVel_.resize(grids_.size());
         prevNodePos_.resize(grids_.size());
+        for(int g = 0; g < grids_.size(); g++)
+        {
+            solverPrevNodePos_[g] = Eigen::Matrix3Xd::Zero(3, grids_[g].getNNodes());
+            nodeVel_[g]           = Eigen::Matrix3Xd::Zero(3, grids_[g].getNNodes());
+            prevNodePos_[g]       = Eigen::Matrix3Xd::Zero(3, grids_[g].getNNodes());
+        }
+
         return true;
     }
 
@@ -188,7 +210,10 @@ private:
                         //pickedNodePos.FromEigenVector(grids_[g].nodePos(pickedNodeIdx));
                         //trackball_.Translate(vcg::Point3f(1, 0, 0));
                         if(!fixCs_[g].isNodeFixed(pickedNodeIdx))
+                        {
                             fixCs_[g].fixNode(grids_, pickedNodeIdx);
+                            nodeVel_[g].col(pickedNodeIdx) = Eigen::Vector3d::Zero();
+                        }
                         else
                             fixCs_[g].freeNode(pickedNodeIdx);
                         break;
@@ -265,7 +290,7 @@ private:
                 trackball_.ButtonUp(vcg::Trackball::KEY_ALT);
 
             if(input_.isKeyPressed(GLFW_KEY_SPACE))
-                playSim_ = !playSim_; 
+                playSim_ = !playSim_;
         }
 
         if(ImGui::BeginMainMenuBar())
@@ -320,9 +345,9 @@ private:
         
         ImGui::Checkbox("Play sim", &playSim_);
         if(ImGui::Button("Do full iteration"))
-            simIters_ = simGrids();
+            simIters_ = simGridsDyn(DYN_SIM_DT);
         if(ImGui::Button("Do N steps"))
-            simIters_ = simGrids(doNStepsSim_);
+            simIters_ = simGridsDyn(DYN_SIM_DT, doNStepsSim_);
         ImGui::DragInt("N", &doNStepsSim_, 1, 1, 1000);
         ImGui::End();
 
@@ -337,7 +362,15 @@ private:
         ImGui::End();
 
         if(playSim_)
-            simIters_ = simGrids();
+        {
+            if(lastUpdateElapsed_ > (1.0 / DYN_SIM_MAX_UPS))
+            {
+                simIters_ = simGridsDyn(DYN_SIM_DT);
+                lastUpdateElapsed_ = 0;
+            }
+            else
+                lastUpdateElapsed_ += deltaTime;
+        }
 
         if(addScissors_)
         {
@@ -414,7 +447,7 @@ private:
     void drawGridPick(int gridIdx)
     {
         Grid& grid = grids_[gridIdx];
-        
+
         glClearColor(bgColorPicking_[0]/255.0, bgColorPicking_[1]/255.0, bgColorPicking_[2]/255.0, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -452,13 +485,8 @@ private:
     }
 
 
-    int simGrids(int doNIters = std::numeric_limits<int>::max())
+    int simGridsDyn(float dt, int doNIters = std::numeric_limits<int>::max())
     {
-        if(gravSim_)
-            for(int g = 0; g < grids_.size(); g++)
-                for(int n = 0; n < grids_[g].getNNodes(); n++)
-                    grids_[g].nodePos(n) -= Eigen::Vector3d{0, SIM_GRAV_SHIFT, 0};
-        
         bool stop = false;
         int nIters = 0;
         double totDisplacement, totPrevNorm;
@@ -466,12 +494,26 @@ private:
 
         simTotDispls.clear();
         simMaxDeltas_.clear();
+        for(int g = 0; g < grids_.size(); g++)
+            prevNodePos_[g] = Eigen::Matrix3Xd(grids_[g].pos);
+        
+        // (5)
+        if(gravSim_)
+            for(int g = 0; g < grids_.size(); g++)
+                for(int n = 0; n < grids_[g].getNNodes(); n++)
+                    nodeVel_[g].col(n) += dt * Eigen::Vector3d{0, -9.81, 0};
+
+        // (7)
+        for(int g = 0; g < grids_.size(); g++)
+            grids_[g].pos += dt * nodeVel_[g];
+
+        // (8)-(11)
         while(!stop)
         {
             maxDelta = 0;
             for(int g = 0; g < grids_.size(); g++)
-                prevNodePos_[g] = Eigen::Matrix3Xd(grids_[g].pos);
-
+                solverPrevNodePos_[g] = Eigen::Matrix3Xd(grids_[g].pos);
+            
             for(const FixedNodeConstr& f : fixCs_)
                 maxDelta = std::max(maxDelta, f.resolve(grids_));
             
@@ -488,7 +530,7 @@ private:
                 for(const SphereCollConstr& s : sphereCollCs_)
                     maxDelta = std::max(maxDelta, s.resolve(grids_));
                 for(const PlaneCollConstr& p : planeCollCs_)
-                        maxDelta = std::max(maxDelta, p.resolve(grids_));
+                    maxDelta = std::max(maxDelta, p.resolve(grids_));
             }
 
             simMaxDeltas_.push_back(maxDelta);
@@ -496,8 +538,8 @@ private:
             totDisplacement = totPrevNorm = 0;
             for(int g = 0; g < grids_.size(); g++)
             {
-                totDisplacement += (prevNodePos_[g] - grids_[g].pos).squaredNorm();
-                totPrevNorm += prevNodePos_[g].squaredNorm();
+                totDisplacement += (solverPrevNodePos_[g] - grids_[g].pos).squaredNorm();
+                totPrevNorm += solverPrevNodePos_[g].squaredNorm();
             }
             simTotDispls.push_back(totDisplacement);
 
@@ -519,6 +561,10 @@ private:
             if(nIters >= doNIters)
                 break;
         }
+
+        // (13)
+        for(int g = 0; g < grids_.size(); g++)
+            nodeVel_[g] = (grids_[g].pos - prevNodePos_[g]) / dt;
 
         return nIters;
     }
