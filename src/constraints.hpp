@@ -71,6 +71,65 @@ private:
 };
 
 
+class ShearingConstr : public HardConstraint
+{
+public:
+    ShearingConstr(std::vector<Grid>& grids, int gridIdx, double length)
+        : gridIdx_(gridIdx),
+          lens_(grids[gridIdx].getNEdges(), length)
+    {
+        computeSquaredLens();
+    }
+
+    ShearingConstr(std::vector<Grid>& grids, int gridIdx, std::vector<double> lengths)
+        : gridIdx_(gridIdx),
+          lens_(lengths)
+    {
+        computeSquaredLens();
+    }
+
+    virtual double resolve(std::vector<Grid>& grids) const
+    {
+        Grid& g = grids[gridIdx_];
+        double maxDelta = 0.0;
+        
+        for(int d = 0; d < g.getNDiags(); d++)
+        {
+            Eigen::Vector3d v = g.nodePos(g.diag(d)[0]) - g.nodePos(g.diag(d)[1]);
+            double dist = v.squaredNorm();
+
+            if(dist > squaredLens_[d])
+                continue;
+
+            double delta = (squaredLens_[d] - dist);
+            double s = delta / (4 * dist);
+            Eigen::Vector3d deltaV = s * v;
+
+            g.nodePos(g.diag(d)[0]) += deltaV;
+            g.nodePos(g.diag(d)[1]) -= deltaV;
+
+            maxDelta = std::max(maxDelta, std::abs(delta));
+        }
+
+        return maxDelta;
+    }
+
+    double getLength(int e) const { return lens_[e]; }
+
+private:
+    void computeSquaredLens()
+    {
+        squaredLens_.reserve(lens_.size());
+        for(double l : lens_)
+            squaredLens_.push_back(std::pow(l, 2));
+    }
+
+    int gridIdx_;
+    std::vector<double> lens_;
+    std::vector<double> squaredLens_;
+};
+
+
 class SphereCollConstr : public HardConstraint
 {
 public:

@@ -58,6 +58,10 @@ public:
               EdgeLenConstr(grids_, 0, INIT_GRID_EDGE_LEN),
               EdgeLenConstr(grids_, 1, INIT_GRID_EDGE_LEN)
           },
+          shearingCs_{
+              ShearingConstr(grids_, 0, INIT_GRID_EDGE_LEN / 2.0),
+              ShearingConstr(grids_, 1, INIT_GRID_EDGE_LEN / 2.0)
+          },
           sphereCollCs_{
               SphereCollConstr(0, Eigen::Vector3d{0, 0, 0}, 0.5),
               SphereCollConstr(1, Eigen::Vector3d{0, 0, 0}, 0.5)
@@ -92,6 +96,7 @@ private:
     std::vector<Grid> grids_;
     std::vector<std::array<GLubyte, 3>> gridColors_;
     std::vector<EdgeLenConstr> edgeLenCs_;
+    std::vector<ShearingConstr> shearingCs_;
     std::vector<SphereCollConstr> sphereCollCs_;
     std::vector<PlaneCollConstr> planeCollCs_;
     std::vector<FixedNodeConstr> fixCs_;
@@ -476,8 +481,12 @@ private:
                 maxDelta = std::max(maxDelta, f.resolve(grids_));
             
             if(edgeSim_)
+            {
                 for(const EdgeLenConstr& e : edgeLenCs_)
                     maxDelta = std::max(maxDelta, e.resolve(grids_));
+                for(const ShearingConstr& s : shearingCs_)
+                    maxDelta = std::max(maxDelta, s.resolve(grids_));
+            }
 
             if(simScissors_)
                 for(const ScissorConstr& s : scissorCs_)

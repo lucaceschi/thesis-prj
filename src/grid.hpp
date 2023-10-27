@@ -19,7 +19,8 @@ struct Grid
     Grid(Eigen::Vector3d center, int nRows, int nCols,
          Eigen::Vector3d xTangVec, Eigen::Vector3d yTangVec, double edgeLength)
         : pos(3, nRows * nCols),
-          edges(2, 2 * nRows * nCols - nRows - nCols)
+          edges(2, 2 * nRows * nCols - nRows - nCols),
+          diags(2, 2 * (nCols - 1) * (nRows - 1))
     {
         double width  = (double)(nCols -  1) * edgeLength;
         double height = (double)(nRows -  1) * edgeLength;
@@ -27,7 +28,7 @@ struct Grid
         yTangVec.normalize();
         Eigen::Vector3d gridOrigin = center - (width/2.0 * xTangVec) - (height/2.0 * yTangVec);
 
-        for(int n = 0, e = 0; n < (nRows * nCols); n++)
+        for(int n = 0, e = 0, d = 0; n < (nRows * nCols); n++)
         {
             // poor spatial locality? https://en.wikipedia.org/wiki/Z-order_curve
             int row = n / nCols;
@@ -39,14 +40,21 @@ struct Grid
                 edges.col(e++) = Eigen::Array2i{n, n+1};
             if(row != nRows - 1)
                 edges.col(e++) = Eigen::Array2i{n, n+nCols};
+
+            if(row != nRows - 1 && col != nCols - 1)
+                diags.col(d++) = Eigen::Array2i(n, n+nCols+1);
+            if(row != 0 && col != nCols - 1)
+                diags.col(d++) = Eigen::Array2i(n, n-nCols+1);
         }
     }
 
     int getNNodes() const { return pos.cols(); }
     int getNEdges() const { return edges.cols(); }
+    int getNDiags() const { return diags.cols(); }
 
     inline Eigen::Block<Eigen::Matrix3Xd, 3, 1, true> nodePos(int idx) { return pos.col(idx); }
     inline Eigen::Block<Eigen::Array2Xi, 2, 1, true> edge(int idx) { return edges.col(idx); }
+    inline Eigen::Block<Eigen::Array2Xi, 2, 1, true> diag(int idx) { return diags.col(idx); }
 
     void exportPly(std::string filename) const
     {
@@ -77,6 +85,7 @@ struct Grid
     
     Eigen::Matrix3Xd pos;
     Eigen::Array2Xi edges;
+    Eigen::Array2Xi diags;
 };
 
 
