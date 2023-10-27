@@ -7,6 +7,7 @@
 
 #include <unordered_map>
 #include <Eigen/Dense>
+#include <math.h>
 
 
 class HardConstraint
@@ -71,21 +72,21 @@ private:
 };
 
 
-class ShearingConstr : public HardConstraint
+class ShearLimitConstr : public HardConstraint
 {
 public:
-    ShearingConstr(std::vector<Grid>& grids, int gridIdx, double length)
-        : gridIdx_(gridIdx),
-          lens_(grids[gridIdx].getNEdges(), length)
+    ShearLimitConstr(std::vector<Grid>& grids, int gridIdx, double edgeLength, double minRadians)
+        : gridIdx_(gridIdx)
     {
-        computeSquaredLens();
-    }
-
-    ShearingConstr(std::vector<Grid>& grids, int gridIdx, std::vector<double> lengths)
-        : gridIdx_(gridIdx),
-          lens_(lengths)
-    {
-        computeSquaredLens();
+        if(minRadians <= 0)
+            squaredLen_ = 0;
+        else if(minRadians >= M_PI_2)
+            squaredLen_ = std::pow(edgeLength, 2) * M_SQRT2;
+        else
+        {
+            double twoSqEdgeLen = 2 * std::pow(edgeLength, 2);
+            squaredLen_ = twoSqEdgeLen - twoSqEdgeLen * std::cos(minRadians);
+        }
     }
 
     virtual double resolve(std::vector<Grid>& grids) const
@@ -98,10 +99,10 @@ public:
             Eigen::Vector3d v = g.nodePos(g.diag(d)[0]) - g.nodePos(g.diag(d)[1]);
             double dist = v.squaredNorm();
 
-            if(dist > squaredLens_[d])
+            if(dist > squaredLen_)
                 continue;
 
-            double delta = (squaredLens_[d] - dist);
+            double delta = (squaredLen_ - dist);
             double s = delta / (4 * dist);
             Eigen::Vector3d deltaV = s * v;
 
@@ -114,19 +115,9 @@ public:
         return maxDelta;
     }
 
-    double getLength(int e) const { return lens_[e]; }
-
 private:
-    void computeSquaredLens()
-    {
-        squaredLens_.reserve(lens_.size());
-        for(double l : lens_)
-            squaredLens_.push_back(std::pow(l, 2));
-    }
-
     int gridIdx_;
-    std::vector<double> lens_;
-    std::vector<double> squaredLens_;
+    double squaredLen_;
 };
 
 
