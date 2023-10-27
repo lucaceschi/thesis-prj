@@ -14,7 +14,7 @@
 
 
 #define MAX_GRID_COLS 10
-#define INIT_GRID_EDGE_LEN 0.2
+#define INIT_GRID_EDGE_LEN 0.1
 
 #define SIM_GRAV_SHIFT 5e-3
 #define SIM_INIT_ABS_TOL 1e-10
