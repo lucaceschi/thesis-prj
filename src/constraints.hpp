@@ -22,12 +22,16 @@ public:
     EdgeLenConstr(std::vector<Grid>& grids, int gridIdx, double length)
         : gridIdx_(gridIdx),
           lens_(grids[gridIdx].getNEdges(), length)
-    {}
+    {
+        computeSquaredLens();
+    }
 
     EdgeLenConstr(std::vector<Grid>& grids, int gridIdx, std::vector<double> lengths)
         : gridIdx_(gridIdx),
           lens_(lengths)
-    {}
+    {
+        computeSquaredLens();
+    }
 
     virtual double resolve(std::vector<Grid>& grids) const
     {
@@ -37,12 +41,13 @@ public:
         for(int e = 0; e < g.getNEdges(); e++)
         {
             Eigen::Vector3d v = g.nodePos(g.edge(e)[0]) - g.nodePos(g.edge(e)[1]);
-            double dist = v.norm();
-            v.normalize();
-            double delta = (lens_[e] - dist) / 2.0;
+            double dist = v.squaredNorm();
+            double delta = (squaredLens_[e] - dist);
+            double s = delta / (4 * dist);
+            Eigen::Vector3d deltaV = s * v;
 
-            g.nodePos(g.edge(e)[0]) += delta * v;
-            g.nodePos(g.edge(e)[1]) -= delta * v;
+            g.nodePos(g.edge(e)[0]) += deltaV;
+            g.nodePos(g.edge(e)[1]) -= deltaV;
 
             maxDelta = std::max(maxDelta, std::abs(delta));
         }
@@ -53,8 +58,16 @@ public:
     double getLength(int e) const { return lens_[e]; }
 
 private:
+    void computeSquaredLens()
+    {
+        squaredLens_.reserve(lens_.size());
+        for(double l : lens_)
+            squaredLens_.push_back(std::pow(l, 2));
+    }
+
     int gridIdx_;
     std::vector<double> lens_;
+    std::vector<double> squaredLens_;
 };
 
 

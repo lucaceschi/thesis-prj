@@ -14,7 +14,7 @@
 
 
 #define MAX_GRID_COLS 10
-#define INIT_GRID_EDGE_LEN 0.2
+#define INIT_GRID_EDGE_LEN 0.1
 
 #define SIM_GRAV_SHIFT 5e-3
 #define SIM_INIT_ABS_TOL 1e-10
@@ -51,8 +51,8 @@ public:
     MainApp()
         : App("Boundary actuation", Eigen::Vector2i{1200, 800}, true),
           grids_{
-              Grid({0, 0.6, 0}, 8, 8, {1, 0, 0}, {0, 0, 1},  0.2),
-              Grid({0, 0.5, 0}, 8, 8, {1, 0, 1}, {-1, 0, 1}, 0.2)
+              Grid({0, 0.6, 0}, 16, 16, {1, 0, 0}, {0, 0, 1},  INIT_GRID_EDGE_LEN),
+              Grid({0, 0.5, 0}, 16, 16, {1, 0, 1}, {-1, 0, 1}, INIT_GRID_EDGE_LEN)
           },
           edgeLenCs_{
               EdgeLenConstr(grids_, 0, INIT_GRID_EDGE_LEN),
