@@ -372,7 +372,7 @@ private:
         // Draw edge len constraints
           
         glColor3ub(gridColors_[gridIdx][0], gridColors_[gridIdx][1], gridColors_[gridIdx][2]);
-        glLineWidth(3.0f);
+        glLineWidth(2.0f * trackball_.track.sca);
 
         glBegin(GL_LINES);
         for(int e = 0; e < grid.getNEdges(); e++)
@@ -386,7 +386,7 @@ private:
 
         // Draw grid nodes
 
-        glPointSize(18.0f);
+        glPointSize(10.0f * trackball_.track.sca);
 
         glBegin(GL_POINTS);
         for(int n = 0; n < grid.getNNodes(); n++)
@@ -425,7 +425,7 @@ private:
 
         // Draw grid nodes
 
-        glPointSize(30.0f);
+        glPointSize(24.0f * trackball_.track.sca);
 
         glBegin(GL_POINTS);
         for(int n = 0; n < grid.getNNodes(); n++)
