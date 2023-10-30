@@ -78,15 +78,7 @@ public:
     ShearLimitConstr(std::vector<Grid>& grids, int gridIdx, double edgeLength, double minRadians)
         : gridIdx_(gridIdx)
     {
-        if(minRadians <= 0)
-            squaredLen_ = 0;
-        else if(minRadians >= M_PI_2)
-            squaredLen_ = std::pow(edgeLength, 2) * M_SQRT2;
-        else
-        {
-            double twoSqEdgeLen = 2 * std::pow(edgeLength, 2);
-            squaredLen_ = twoSqEdgeLen - twoSqEdgeLen * std::cos(minRadians);
-        }
+        setLimit(edgeLength, minRadians);
     }
 
     virtual double resolve(std::vector<Grid>& grids) const
@@ -113,6 +105,19 @@ public:
         }
 
         return maxDelta;
+    }
+
+    void setLimit(double edgeLength, double minRadians)
+    {
+        if(minRadians <= 0)
+            squaredLen_ = 0;
+        else if(minRadians >= M_PI_2)
+            squaredLen_ = std::pow(edgeLength, 2) * M_SQRT2;
+        else
+        {
+            double twoSqEdgeLen = 2 * std::pow(edgeLength, 2);
+            squaredLen_ = twoSqEdgeLen - twoSqEdgeLen * std::cos(minRadians);
+        }
     }
 
 private:

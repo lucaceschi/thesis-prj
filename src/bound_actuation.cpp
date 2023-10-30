@@ -77,6 +77,10 @@ public:
               ShearLimitConstr(grids_, 0, INIT_GRID_EDGE_LEN, M_PI_4),
               //ShearLimitConstr(grids_, 1, INIT_GRID_EDGE_LEN, M_PI_4)
           },
+          shearLimitsDegree_{
+              20,
+              20
+          },
           sphereCollCs_{
               SphereCollConstr(0, Eigen::Vector3d{0, 0, 0}, 1),
               //SphereCollConstr(1, Eigen::Vector3d{0, 0, 0}, 0.5)
@@ -115,6 +119,7 @@ private:
     std::vector<std::array<GLubyte, 3>> gridColors_;
     std::vector<EdgeLenConstr> edgeLenCs_;
     std::vector<ShearLimitConstr> shearingCs_;
+    std::vector<int> shearLimitsDegree_;
     std::vector<SphereCollConstr> sphereCollCs_;
     std::vector<PlaneCollConstr> planeCollCs_;
     std::vector<FixedNodeConstr> fixCs_;
@@ -375,6 +380,11 @@ private:
         ImGui::Checkbox("Edge Lenght", &edgeSim_);
         ImGui::Checkbox("Collisions", &simCollision_);
         ImGui::Checkbox("Scissors", &simScissors_);
+
+        for(int g = 0; g < grids_.size(); g++)
+            if(ImGui::SliderInt("##shearAngle", &shearLimitsDegree_[g], 0, 90))
+                shearingCs_[g].setLimit(INIT_GRID_EDGE_LEN, shearLimitsDegree_[g] * (M_PI / 180));
+
         ImGui::Checkbox("Add scissors", &addScissors_);
         if(ImGui::Button("Cut"))
             cut();
