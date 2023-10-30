@@ -2,6 +2,7 @@
 #include "framework/debug.hpp"
 #include "grid.hpp"
 #include "constraints.hpp"
+#include "forces.hpp"
 
 #include <stdio.h>
 #include <vector>
@@ -51,8 +52,8 @@ public:
     MainApp()
         : App("Boundary actuation", Eigen::Vector2i{1200, 800}, true),
           grids_{
-              Grid({0, 0.6, 0}, 16, 16, {1, 0, 0}, {0, 0, 1},  INIT_GRID_EDGE_LEN),
-              Grid({0, 0.5, 0}, 16, 16, {1, 0, 1}, {-1, 0, 1}, INIT_GRID_EDGE_LEN)
+              Grid({0, 1, 0}, 16, 16, {1, 0, 0}, {0, 0, 1},  INIT_GRID_EDGE_LEN),
+              Grid({0, 1, 0}, 16, 16, {1, 0, 1}, {-1, 0, 1}, INIT_GRID_EDGE_LEN)
           },
           edgeLenCs_{
               EdgeLenConstr(grids_, 0, INIT_GRID_EDGE_LEN),
@@ -70,6 +71,7 @@ public:
               FixedNodeConstr(0),
               FixedNodeConstr(1)
           },
+          gravForce_(Eigen::Vector3d{0, -SIM_GRAV_SHIFT, 0}),
           gridColors_{
               {0x60, 0x60, 0xde},
               {0x60, 0xbc, 0xc0}
@@ -101,6 +103,8 @@ private:
     std::vector<PlaneCollConstr> planeCollCs_;
     std::vector<FixedNodeConstr> fixCs_;
     std::vector<ScissorConstr> scissorCs_;
+
+    ConstantForce gravForce_;
 
     const GLubyte bgColorRender_[3];
     const GLubyte bgColorPicking_[3];
@@ -457,12 +461,26 @@ private:
     }
 
 
+    float smoothstep(float edge0, float edge1, float x)
+    {
+        // Scale, and clamp x to 0..1 range
+        x = clamp((x - edge0) / (edge1 - edge0));
+        return x * x * (3.0f - 2.0f * x);
+    }
+
+    float clamp(float x, float lowerlimit = 0.0f, float upperlimit = 1.0f)
+    {
+        if (x < lowerlimit) return lowerlimit;
+        if (x > upperlimit) return upperlimit;
+        return x;
+    }
+
     int simGrids(int doNIters = std::numeric_limits<int>::max())
     {
         if(gravSim_)
             for(int g = 0; g < grids_.size(); g++)
                 for(int n = 0; n < grids_[g].getNNodes(); n++)
-                    grids_[g].nodePos(n) -= Eigen::Vector3d{0, SIM_GRAV_SHIFT, 0};
+                    grids_[g].nodePos(n) += gravForce_.F(grids_[g].nodePos(n));
         
         bool stop = false;
         int nIters = 0;
