@@ -32,4 +32,45 @@ private:
 };
 
 
+class SDFAttractionForce : public UnaryForce
+{
+public:
+    using SDF = double(Eigen::Vector3d);
+    using dSDF = Eigen::Vector3d(Eigen::Vector3d);
+
+    SDFAttractionForce(SDF* sdf, dSDF* dsdf)
+        : sdf_(sdf),
+          dsdf_(dsdf)
+    {}
+
+    virtual Eigen::Vector3d F(Eigen::Vector3d pos) const
+    {
+        return -dsdf_(pos) * sdf_(pos);
+    }
+
+private:
+    SDF* sdf_;
+    dSDF* dsdf_;
+};
+
+
+class SphereAttractionForce : public SDFAttractionForce
+{
+public:
+    SphereAttractionForce()
+        : SDFAttractionForce(this->sdf, this->dsdf)
+    {}
+
+private:
+    static double sdf(Eigen::Vector3d pos)
+    {
+        return pos.norm() - 0.5;
+    }
+
+    static Eigen::Vector3d dsdf(Eigen::Vector3d pos)
+    {
+        return pos.normalized();
+    }
+};
+
 #endif

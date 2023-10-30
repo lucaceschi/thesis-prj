@@ -72,6 +72,7 @@ public:
               FixedNodeConstr(1)
           },
           gravForce_(Eigen::Vector3d{0, -SIM_GRAV_SHIFT, 0}),
+          sphereAttrForce_(),
           gridColors_{
               {0x60, 0x60, 0xde},
               {0x60, 0xbc, 0xc0}
@@ -105,6 +106,7 @@ private:
     std::vector<ScissorConstr> scissorCs_;
 
     ConstantForce gravForce_;
+    SphereAttractionForce sphereAttrForce_;
 
     const GLubyte bgColorRender_[3];
     const GLubyte bgColorPicking_[3];
@@ -480,7 +482,11 @@ private:
         if(gravSim_)
             for(int g = 0; g < grids_.size(); g++)
                 for(int n = 0; n < grids_[g].getNNodes(); n++)
-                    grids_[g].nodePos(n) += gravForce_.F(grids_[g].nodePos(n));
+                {
+                    Eigen::Vector3d grav = gravForce_.F(grids_[g].nodePos(n));
+                    Eigen::Vector3d attr = sphereAttrForce_.F(grids_[g].nodePos(n)) * SIM_GRAV_SHIFT * 2;
+                    grids_[g].nodePos(n) += (grav + attr);
+                }
         
         bool stop = false;
         int nIters = 0;
