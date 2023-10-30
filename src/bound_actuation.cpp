@@ -11,7 +11,9 @@
 
 #include <Eigen/Dense>
 #include <imgui.h>
+#include <vcg/complex/complex.h>
 #include <wrap/gui/trackball.h>
+#include <wrap/io_trimesh/import.h>
 
 
 #define MAX_GRID_COLS 10
@@ -46,32 +48,45 @@ enum ViewPoint
 };
 
 
+class Vertex;
+class Face;
+struct MeshUsedTypes : public vcg::UsedTypes<vcg::Use<Vertex>::AsVertexType,
+                                             vcg::Use<Face>::AsFaceType> {};
+class Vertex : public vcg::Vertex<MeshUsedTypes,
+                                  vcg::vertex::Coord3d> {};
+class Face : public vcg::Face<MeshUsedTypes,
+                              vcg::face::VertexRef> {};
+class Mesh : public vcg::tri::TriMesh<std::vector<Vertex>,
+                                      std::vector<Face>> {};
+
+
 class MainApp : public frmwrk::App
 {
 public:
     MainApp()
         : App("Boundary actuation", Eigen::Vector2i{1200, 800}, true),
           grids_{
-              Grid({0, 1, 0}, 16, 16, {1, 0, 0}, {0, 0, 1},  INIT_GRID_EDGE_LEN),
-              Grid({0, 1, 0}, 16, 16, {1, 0, 1}, {-1, 0, 1}, INIT_GRID_EDGE_LEN)
+              Grid({0, 1.5, 0}, 32, 32, {1, 0, 0}, {0, 0, 1},  INIT_GRID_EDGE_LEN),
+              //Grid({0, 1, 0}, 16, 16, {1, 0, 1}, {-1, 0, 1}, INIT_GRID_EDGE_LEN)
           },
           edgeLenCs_{
               EdgeLenConstr(grids_, 0, INIT_GRID_EDGE_LEN),
-              EdgeLenConstr(grids_, 1, INIT_GRID_EDGE_LEN)
+              //EdgeLenConstr(grids_, 1, INIT_GRID_EDGE_LEN)
           },
           shearingCs_{
               ShearLimitConstr(grids_, 0, INIT_GRID_EDGE_LEN, M_PI_4),
-              ShearLimitConstr(grids_, 1, INIT_GRID_EDGE_LEN, M_PI_4)
+              //ShearLimitConstr(grids_, 1, INIT_GRID_EDGE_LEN, M_PI_4)
           },
           sphereCollCs_{
-              SphereCollConstr(0, Eigen::Vector3d{0, 0, 0}, 0.5),
-              SphereCollConstr(1, Eigen::Vector3d{0, 0, 0}, 0.5)
+              SphereCollConstr(0, Eigen::Vector3d{0, 0, 0}, 1),
+              //SphereCollConstr(1, Eigen::Vector3d{0, 0, 0}, 0.5)
           },
           fixCs_{
               FixedNodeConstr(0),
-              FixedNodeConstr(1)
+              //FixedNodeConstr(1)
           },
           gravForce_(Eigen::Vector3d{0, -SIM_GRAV_SHIFT, 0}),
+          sphereMesh_(),
           sphereAttrForce_(),
           gridColors_{
               {0x60, 0x60, 0xde},
@@ -106,7 +121,8 @@ private:
     std::vector<ScissorConstr> scissorCs_;
 
     ConstantForce gravForce_;
-    SphereAttractionForce sphereAttrForce_;
+    Mesh sphereMesh_;
+    MeshAttractionForce<Mesh> sphereAttrForce_;
 
     const GLubyte bgColorRender_[3];
     const GLubyte bgColorPicking_[3];
@@ -135,6 +151,23 @@ private:
     {
         glClearColor(bgColorRender_[0]/255.0, bgColorRender_[1]/255.0, bgColorRender_[2]/255.0, 1.0f);
         prevNodePos_.resize(grids_.size());
+
+        using Importer = vcg::tri::io::Importer<Mesh>;
+        int loadErr, loadMask;
+        loadErr = Importer::Open(sphereMesh_, "../data/sphere.ply", loadMask);
+        if(Importer::ErrorCritical(loadErr))
+        {
+            frmwrk::Debug::logError("Loading mesh: %s", Importer::ErrorMsg(loadErr));
+            return false;
+        }
+        else if(loadErr != 0)
+        {
+            frmwrk::Debug::logWarning("Loading mesh: %s", Importer::ErrorMsg(loadErr));
+            return false;
+        }
+
+        sphereAttrForce_.load(sphereMesh_, 0.1, 10, 10);
+
         return true;
     }
 
