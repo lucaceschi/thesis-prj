@@ -17,7 +17,7 @@
 
 
 #define MAX_GRID_COLS 10
-#define INIT_GRID_EDGE_LEN 0.1
+#define INIT_GRID_EDGE_LEN 0.05
 
 #define SIM_GRAV_SHIFT 5e-3
 #define SIM_INIT_ABS_TOL 1e-10
@@ -27,6 +27,20 @@
 #define SIM_SCISSOR_CC_MIN_DIST 1e-2
 #define SIM_SCISSOR_CN_MIN_DIST 1e-2
 
+#define USE_VDB 1
+#if USE_VDB
+    #define ATTRACTOR_VDB_PATH "../data/bunny.vdb"
+#else
+    #define ATTRACTOR_MESH_PATH "../data/bunny.ply"
+#endif
+
+#define SDF_VOXEL_SIZE 0.005
+#define SDF_EXT_BAND_WIDTH_WORLD 0.2
+#define SDF_EXT_BAND_WIDTH_VOXEL 40 // SDF_EXT_BAND_WIDTH_WORLD / SDF_VOXEL_SIZE
+#define SDF_INT_BAND_WIDTH_WORLD 0.2
+#define SDF_INT_BAND_WIDTH_VOXEL 40 // SDF_INT_BAND_WIDTH_WORLD / SDF_VOXEL_SIZE
+#define SDF_MIN_NEAR_BOUND 0.0025 //SDF_VOXEL_SIZE / 2
+#define SDF_MAX_FAR_BOUND 0.1975 // SDF_EXT_BAND_WIDTH_WORLD - SDF_VOXEL_SIZE / 2
 
 struct Pick
 {
@@ -60,13 +74,27 @@ class Mesh : public vcg::tri::TriMesh<std::vector<Vertex>,
                                       std::vector<Face>> {};
 
 
+float clamp(float x, float lowerlimit = 0.0f, float upperlimit = 1.0f)
+{
+    if (x < lowerlimit) return lowerlimit;
+    if (x > upperlimit) return upperlimit;
+    return x;
+}
+
+float smoothstep(float edge0, float edge1, float x)
+{
+    x = clamp((x - edge0) / (edge1 - edge0));
+    return x * x * (3.0f - 2.0f * x);
+}
+
+
 class MainApp : public frmwrk::App
 {
 public:
     MainApp()
         : App("Boundary actuation", Eigen::Vector2i{1200, 800}, true),
           grids_{
-              Grid({0, 1.5, 0}, 32, 32, {1, 0, 0}, {0, 0, 1},  INIT_GRID_EDGE_LEN),
+              Grid({-0.2, 1.5, 0.2}, 32, 32, {1, 0, 0}, {0, 0, 1},  INIT_GRID_EDGE_LEN),
               //Grid({0, 1, 0}, 16, 16, {1, 0, 1}, {-1, 0, 1}, INIT_GRID_EDGE_LEN)
           },
           edgeLenCs_{
@@ -90,8 +118,8 @@ public:
               //FixedNodeConstr(1)
           },
           gravForce_(Eigen::Vector3d{0, -SIM_GRAV_SHIFT, 0}),
-          sphereMesh_(),
-          sphereAttrForce_(),
+          attrMesh_(),
+          meshAttrForce_(),
           gridColors_{
               {0x60, 0x60, 0xde},
               {0x60, 0xbc, 0xc0}
@@ -108,10 +136,12 @@ public:
           doNStepsSim_(1),
           gravSim_(true),
           edgeSim_(true),
-          simCollision_(true),
+          simCollision_(false),
           simScissors_(true),
           addScissors_(false),
-          simIters_(0)
+          simIters_(0),
+          fittingNearBound_(SDF_MIN_NEAR_BOUND),
+          fittingFarBound_(SDF_MAX_FAR_BOUND)
     {}
 
 private:
@@ -126,8 +156,12 @@ private:
     std::vector<ScissorConstr> scissorCs_;
 
     ConstantForce gravForce_;
-    Mesh sphereMesh_;
-    MeshAttractionForce<Mesh> sphereAttrForce_;
+    Mesh attrMesh_;
+#if USE_VDB
+    DiscreteSDFAttractionForce meshAttrForce_;
+#else
+    MeshAttractionForce<Mesh> meshAttrForce_;
+#endif
 
     const GLubyte bgColorRender_[3];
     const GLubyte bgColorPicking_[3];
@@ -151,15 +185,19 @@ private:
     std::vector<float> simMaxDeltas_;
     std::vector<Eigen::Matrix3Xd> prevNodePos_;
 
+    float fittingNearBound_;
+    float fittingFarBound_;
+
 
     virtual bool initApp()
     {
         glClearColor(bgColorRender_[0]/255.0, bgColorRender_[1]/255.0, bgColorRender_[2]/255.0, 1.0f);
         prevNodePos_.resize(grids_.size());
 
+#if !USE_VDB
         using Importer = vcg::tri::io::Importer<Mesh>;
         int loadErr, loadMask;
-        loadErr = Importer::Open(sphereMesh_, "../data/sphere.ply", loadMask);
+        loadErr = Importer::Open(attrMesh_, ATTRACTOR_MESH_PATH, loadMask);
         if(Importer::ErrorCritical(loadErr))
         {
             frmwrk::Debug::logError("Loading mesh: %s", Importer::ErrorMsg(loadErr));
@@ -170,8 +208,10 @@ private:
             frmwrk::Debug::logWarning("Loading mesh: %s", Importer::ErrorMsg(loadErr));
             return false;
         }
-
-        sphereAttrForce_.load(sphereMesh_, 0.1, 10, 10);
+        meshAttrForce_.load(attrMesh_, SDF_VOXEL_SIZE, SDF_EXT_BAND_WIDTH_VOXEL, SDF_INT_BAND_WIDTH_VOXEL);
+#else       
+        meshAttrForce_.load(ATTRACTOR_VDB_PATH);
+#endif
 
         return true;
     }
@@ -388,6 +428,11 @@ private:
         ImGui::Checkbox("Add scissors", &addScissors_);
         if(ImGui::Button("Cut"))
             cut();
+
+        ImGui::End();
+        ImGui::Begin("Fitting");
+        ImGui::SliderFloat("near", &fittingNearBound_, SDF_MIN_NEAR_BOUND, SDF_MAX_FAR_BOUND);
+        ImGui::SliderFloat("far", &fittingFarBound_, SDF_MIN_NEAR_BOUND, SDF_MAX_FAR_BOUND);
         ImGui::End();
 
         if(playSim_)
@@ -521,14 +566,20 @@ private:
     }
 
     int simGrids(int doNIters = std::numeric_limits<int>::max())
-    {
+    {        
         if(gravSim_)
             for(int g = 0; g < grids_.size(); g++)
                 for(int n = 0; n < grids_[g].getNNodes(); n++)
                 {
                     Eigen::Vector3d grav = gravForce_.F(grids_[g].nodePos(n));
-                    Eigen::Vector3d attr = sphereAttrForce_.F(grids_[g].nodePos(n)) * SIM_GRAV_SHIFT * 2;
-                    grids_[g].nodePos(n) += (grav + attr);
+
+                    Eigen::Vector3d attr = Eigen::Vector3d::Zero();
+                    double surfDist = meshAttrForce_.distFromSurface(grids_[g].nodePos(n));
+                    if(std::abs(surfDist) > SDF_MIN_NEAR_BOUND && std::abs(surfDist) < SDF_MAX_FAR_BOUND)
+                        attr = meshAttrForce_.F(grids_[g].nodePos(n));
+                    
+                    double s = smoothstep(fittingNearBound_, fittingFarBound_, surfDist);
+                    grids_[g].nodePos(n) += (grav * s) + (attr * (1.0-s));
                 }
         
         bool stop = false;
