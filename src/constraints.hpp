@@ -8,6 +8,9 @@
 #include <unordered_map>
 #include <Eigen/Dense>
 #include <math.h>
+#include <openvdb/openvdb.h>
+#include <openvdb/tools/MeshToVolume.h>
+#include <openvdb/tools/GridOperators.h>
 
 
 class HardConstraint
@@ -196,6 +199,137 @@ public:
 private:
     int gridIdx_;
     Eigen::Vector3d origin_, normal_;
+};
+
+
+class DiscreteSDFCollConstr : public HardConstraint
+{
+using Vec3d = openvdb::math::Vec3d;
+using Coord = openvdb::Coord;
+using Transform = openvdb::math::Transform;
+using FloatGrid = openvdb::FloatGrid;
+using FloatGradient = openvdb::tools::Gradient<FloatGrid>;
+
+public:
+    DiscreteSDFCollConstr(std::vector<Grid>& grids, int gridIdx)
+        : ready_(false),
+          gridIdx_(gridIdx),
+          nNodes_(grids[gridIdx].getNNodes())
+    {}
+
+    DiscreteSDFCollConstr(std::vector<Grid>& grids, int gridIdx, std::string vdbPath)
+        : ready_(false),
+          gridIdx_(gridIdx),
+          nNodes_(grids[gridIdx].getNNodes())
+    {
+        load(vdbPath);
+    }
+
+    DiscreteSDFCollConstr(std::vector<Grid>& grids, int gridIdx, FloatGrid::Ptr sdfGrid)
+        : ready_(false),
+          gridIdx_(gridIdx),
+          nNodes_(grids[gridIdx].getNNodes())
+    {
+        load(sdfGrid);
+    }
+
+    bool load(FloatGrid::Ptr sdfGrid)
+    {
+        openvdb::initialize();
+        
+        sdfGrid_ = sdfGrid;
+        transform_ = sdfGrid->transformPtr();
+        
+        computeGradientGrid();
+        prepareAccessors();
+
+        ready_ = true;
+        return true;
+    }
+
+    bool load(std::string vdbPath)
+    {
+        openvdb::initialize();
+        
+        openvdb::io::File vdbFile(vdbPath);
+        try
+        {
+            vdbFile.open(false);
+        }
+        catch(std::exception& e)
+        {
+            frmwrk::Debug::logError("%s: %s", vdbPath.c_str(), e.what());
+            return false;
+        }
+        if (vdbFile.getGrids()->empty())
+        {
+            frmwrk::Debug::logWarning("%s: no grid found");
+            return false;
+        }
+        //openvdb::GridBase::Ptr grid = vdbFile.getGrids()->front();
+        sdfGrid_ = openvdb::gridPtrCast<openvdb::FloatGrid>(vdbFile.getGrids()->front());
+        vdbFile.close();
+
+        transform_ = sdfGrid_->transformPtr();
+        computeGradientGrid();
+        prepareAccessors();
+
+        ready_ = true;
+        return true;
+    }
+
+    virtual double resolve(std::vector<Grid>& grids) const
+    {
+        if(!ready_)
+            return 0;
+        
+        Grid& g = grids[gridIdx_];
+        double currDelta, maxDelta = 0;
+
+        for(int n = 0; n < g.getNNodes(); n++)
+        {
+            Coord c = transform_->worldToIndexCellCentered(Vec3d(g.nodePos(n).data()));
+            currDelta = sdfGridAccs_[n].getValue(c);
+
+            if(currDelta < 0)
+            {
+                Coord c = transform_->worldToIndexCellCentered(Vec3d(g.nodePos(n).data()));
+                Eigen::Vector3d grad = Eigen::Vector3f(gradGridAccs_[n].getValue(c).asPointer()).cast<double>();
+                g.nodePos(n) -= (currDelta * grad);
+            }
+            maxDelta = std::max(maxDelta, -currDelta);
+        }
+
+        return maxDelta;
+    }
+
+private:
+    void computeGradientGrid()
+    {
+        FloatGradient grad(*sdfGrid_);
+        gradGrid_ = grad.process();
+    }
+
+    void prepareAccessors()
+    {
+        sdfGridAccs_.reserve(nNodes_);
+        gradGridAccs_.reserve(nNodes_);
+        for(int n = 0; n < nNodes_; n++)
+        {
+            sdfGridAccs_.emplace_back(sdfGrid_->getConstAccessor());
+            gradGridAccs_.emplace_back(gradGrid_->getConstAccessor());
+        }        
+    }
+
+    bool ready_;
+    int gridIdx_;
+    int nNodes_;
+    Transform::Ptr transform_;
+    FloatGrid::Ptr sdfGrid_;
+    FloatGradient::OutGridType::Ptr gradGrid_;
+
+    std::vector<FloatGrid::ConstAccessor> sdfGridAccs_;
+    std::vector<FloatGradient::OutGridType::ConstAccessor> gradGridAccs_;
 };
 
 

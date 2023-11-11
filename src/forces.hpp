@@ -139,8 +139,6 @@ public:
 
         transform_ = sdfGrid_->transformPtr();
         computeGradientGrid();
-        
-        std::cout << F(Eigen::Vector3d{0, 0, 0}) << std::endl;
 
         ready_ = true;
         return true;
